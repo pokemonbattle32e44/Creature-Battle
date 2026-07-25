@@ -1,0 +1,114 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profiles, team, PC box, inventory, stats, ranking, and admin status",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "nickname": { "type": "string" },
+        "avatar": { "type": "string" },
+        "money": { "type": "number" },
+        "isAdmin": { "type": "boolean" },
+        "elo": { "type": "number" },
+        "league": { "type": "string" },
+        "wins": { "type": "number" },
+        "losses": { "type": "number" },
+        "winStreak": { "type": "number" },
+        "team": { "type": "array" },
+        "pcBox": { "type": "array" },
+        "inventory": { "type": "object" },
+        "pokedexCaught": { "type": "array" },
+        "pokedexSeen": { "type": "array" },
+        "favoritePokemonId": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      },
+      "required": ["uid", "email", "nickname"]
+    },
+    "friends": {
+      "title": "Friends",
+      "description": "Friendships between users",
+      "type": "object",
+      "properties": {
+        "userA": { "type": "string" },
+        "userB": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "friendRequests": {
+      "title": "Friend Requests",
+      "description": "Pending friend invitations",
+      "type": "object",
+      "properties": {
+        "fromUid": { "type": "string" },
+        "fromNickname": { "type": "string" },
+        "toUid": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "gifts": {
+      "title": "Gifts",
+      "description": "Gifts sent between players (Pokemon, items, money)",
+      "type": "object",
+      "properties": {
+        "fromUid": { "type": "string" },
+        "fromNickname": { "type": "string" },
+        "toUid": { "type": "string" },
+        "type": { "type": "string" },
+        "payload": { "type": "object" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "trades": {
+      "title": "Trades",
+      "description": "Real-time trading sessions",
+      "type": "object",
+      "properties": {
+        "hostUid": { "type": "string" },
+        "guestUid": { "type": "string" },
+        "hostPokemon": { "type": "object" },
+        "guestPokemon": { "type": "object" },
+        "hostConfirmed": { "type": "boolean" },
+        "guestConfirmed": { "type": "boolean" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "battles": {
+      "title": "Battles",
+      "description": "Live PvP Battle Rooms",
+      "type": "object",
+      "properties": {
+        "hostUid": { "type": "string" },
+        "guestUid": { "type": "string" },
+        "hostTeam": { "type": "array" },
+        "guestTeam": { "type": "array" },
+        "hostActiveIndex": { "type": "number" },
+        "guestActiveIndex": { "type": "number" },
+        "hostCurrentMove": { "type": "string" },
+        "guestCurrentMove": { "type": "string" },
+        "status": { "type": "string" },
+        "turn": { "type": "number" },
+        "mode": { "type": "string" },
+        "winnerUid": { "type": "string" },
+        "logs": { "type": "array" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "logs": {
+      "title": "Logs",
+      "description": "System activity logs for battles, trades, and gifts",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "participants": { "type": "array" },
+        "detail": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    }
+  }
+}

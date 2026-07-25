@@ -1,0 +1,6 @@
+{
+  "name": "Pokémon Arena - Batalhas Pokémon",
+  "description": "Jogo de Pokémon focado em batalhas com mecânicas oficiais, busca de iniciais, evolução, captura, loja de itens, TMs e efeitos de áudio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
