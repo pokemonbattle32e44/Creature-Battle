@@ -1,7 +1,39 @@
 import { PokemonBaseData } from '../types/pokemon';
 
+export const MISSINGNO_SPRITE = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128"><rect width="64" height="64" fill="none"/><g fill="%23a855f7"><rect x="16" y="8" width="8" height="48"/><rect x="24" y="16" width="16" height="32"/><rect x="40" y="24" width="8" height="24"/><rect x="8" y="24" width="8" height="16"/></g><g fill="%23ec4899"><rect x="20" y="12" width="12" height="8"/><rect x="12" y="28" width="20" height="12"/><rect x="28" y="40" width="16" height="12"/></g><g fill="%23ffffff"><rect x="18" y="10" width="4" height="4"/><rect x="30" y="20" width="6" height="6"/><rect x="22" y="32" width="8" height="4"/><rect x="36" y="44" width="4" height="6"/></g></svg>`;
+
+export const GHOST_SPRITE = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128"><path d="M 16 16 C 16 8, 48 8, 48 16 C 48 24, 52 32, 52 48 C 44 56, 36 48, 32 52 C 28 48, 20 56, 12 48 C 12 32, 16 24, 16 16 Z" fill="%23475569"/><ellipse cx="26" cy="24" rx="5" ry="7" fill="%23ef4444"/><ellipse cx="38" cy="24" rx="5" ry="7" fill="%23ef4444"/><ellipse cx="26" cy="24" rx="2" ry="3" fill="%23000"/><ellipse cx="38" cy="24" rx="2" ry="3" fill="%23000"/><path d="M 22 36 Q 32 44 42 36" stroke="%23000" stroke-width="2.5" fill="none"/></svg>`;
+
+export function getPokemonSpriteStyle(pkmn?: { pokedexId?: number; id?: number; name?: string; isShiny?: boolean }) {
+  if (!pkmn) return {};
+  const id = pkmn.pokedexId ?? pkmn.id;
+  const isSpecial = id === 0 || id === 666 || pkmn.name === 'missingno' || pkmn.name === 'ghost';
+  if (pkmn.isShiny && isSpecial) {
+    return { filter: 'invert(100%) hue-rotate(180deg)' };
+  }
+  return {};
+}
+
 // High quality sprite builder helpers using official PokeAPI / Showdown CDN
 export function getSpriteUrls(id: number, name: string, isShiny: boolean = false) {
+  if (id === 0 || name === 'missingno') {
+    return {
+      front: MISSINGNO_SPRITE,
+      back: MISSINGNO_SPRITE,
+      animatedFront: MISSINGNO_SPRITE,
+      animatedBack: MISSINGNO_SPRITE,
+      artwork: MISSINGNO_SPRITE,
+    };
+  }
+  if (id === 666 || name === 'ghost') {
+    return {
+      front: GHOST_SPRITE,
+      back: GHOST_SPRITE,
+      animatedFront: GHOST_SPRITE,
+      animatedBack: GHOST_SPRITE,
+      artwork: GHOST_SPRITE,
+    };
+  }
   const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, '');
   const shinyPath = isShiny ? 'shiny/' : '';
   return {
@@ -22,10 +54,10 @@ export const STARTERS_AND_POKEMON_DATABASE: Record<number, PokemonBaseData> = {
     types: ['normal', 'flying'],
     baseStats: { hp: 178, atk: 136, def: 11, spAtk: 6, spDef: 6, spd: 29 },
     sprites: {
-      front: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/e/e0/MissingNo.1.png/revision/latest?cb=20200404195127',
-      animatedFront: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/e/e0/MissingNo.1.png/revision/latest?cb=20200404195127',
-      back: 'https://archives.bulbagarden.net/media/upload/4/47/RBGlitchMissingno._b.png',
-      artwork: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/e/e0/MissingNo.1.png/revision/latest?cb=20200404195127',
+      front: MISSINGNO_SPRITE,
+      animatedFront: MISSINGNO_SPRITE,
+      back: MISSINGNO_SPRITE,
+      artwork: MISSINGNO_SPRITE,
     },
     abilities: ['Glitch', 'Invincible'],
     isStage1Basic: false,
@@ -45,10 +77,10 @@ export const STARTERS_AND_POKEMON_DATABASE: Record<number, PokemonBaseData> = {
     types: ['ghost', 'dark'],
     baseStats: { hp: 160, atk: 150, def: 100, spAtk: 160, spDef: 120, spd: 140 },
     sprites: {
-      front: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/a/a2/MissingNo.2.png/revision/latest?cb=20200404195138',
-      animatedFront: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/a/a2/MissingNo.2.png/revision/latest?cb=20200404195138',
-      back: 'https://i.postimg.cc/jd9YLgYq/Gemini-Generated-Image-9rp98q9rp98q9rp9-removebg-preview.png',
-      artwork: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/a/a2/MissingNo.2.png/revision/latest?cb=20200404195138',
+      front: GHOST_SPRITE,
+      animatedFront: GHOST_SPRITE,
+      back: GHOST_SPRITE,
+      artwork: GHOST_SPRITE,
     },
     abilities: ['Curse', 'Ghostly Terror', 'Soul Steal'],
     isStage1Basic: false,

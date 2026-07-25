@@ -166,8 +166,15 @@ export function createPokemonInstance(
   const expCurrent = Math.pow(level, 3);
   const expToNext = Math.pow(level + 1, 3);
 
-  // If shiny, use shiny sprite URLs
-  const sprites = isShiny ? getSpriteUrls(baseData.id, baseData.name, true) : baseData.sprites;
+  // If shiny, use shiny sprite URLs (or base sprites for special boss/glitch pokemon)
+  let sprites = baseData.sprites;
+  if (isShiny) {
+    if (baseData.id === 0 || baseData.id === 666 || baseData.name === 'missingno' || baseData.name === 'ghost') {
+      sprites = { ...baseData.sprites };
+    } else {
+      sprites = getSpriteUrls(baseData.id, baseData.name, true);
+    }
+  }
 
   return {
     instanceId: Math.random().toString(36).substring(2, 9),
@@ -191,6 +198,55 @@ export function createPokemonInstance(
     isPseudoLegendary: (baseData as any).isPseudoLegendary ?? false,
     isRestricted: baseData.isRestricted ?? false,
     evolution: baseData.evolution,
+  };
+}
+
+export function normalizePokemonInstance(pkmn: any): PokemonInstance {
+  if (!pkmn || typeof pkmn !== 'object') return pkmn;
+  const id = pkmn.pokedexId ?? pkmn.id ?? 1;
+  const baseData = STARTERS_AND_POKEMON_DATABASE[id] || STARTERS_AND_POKEMON_DATABASE[1];
+  const isSpecial = id === 0 || id === 666 || pkmn.name === 'missingno' || pkmn.name === 'ghost';
+
+  let sprites = pkmn.sprites;
+  if (!sprites || !sprites.front || (isSpecial && (sprites.front.includes('shiny/') || sprites.front.includes('wikia')))) {
+    if (isSpecial) {
+      sprites = baseData ? { ...baseData.sprites } : getSpriteUrls(id, pkmn.name || 'missingno', false);
+    } else {
+      sprites = getSpriteUrls(id, pkmn.name || 'pokemon', pkmn.isShiny);
+    }
+  }
+
+  const maxHp = pkmn.maxHp || (baseData ? calculateStat(baseData.baseStats.hp, pkmn.level || 1, true) : 50);
+
+  return {
+    instanceId: pkmn.instanceId || Math.random().toString(36).substring(2, 9),
+    pokedexId: id,
+    name: pkmn.name || baseData?.name || 'pokemon',
+    displayName: pkmn.displayName || baseData?.displayName || 'Pokémon',
+    level: pkmn.level || 1,
+    currentHp: typeof pkmn.currentHp === 'number' ? pkmn.currentHp : maxHp,
+    maxHp: maxHp,
+    baseStats: pkmn.baseStats || baseData?.baseStats || { hp: 45, atk: 49, def: 49, spAtk: 65, spDef: 65, spd: 45 },
+    calculatedStats: pkmn.calculatedStats || {
+      hp: maxHp,
+      atk: calculateStat(baseData?.baseStats?.atk || 45, pkmn.level || 1, false),
+      def: calculateStat(baseData?.baseStats?.def || 45, pkmn.level || 1, false),
+      spAtk: calculateStat(baseData?.baseStats?.spAtk || 65, pkmn.level || 1, false),
+      spDef: calculateStat(baseData?.baseStats?.spDef || 65, pkmn.level || 1, false),
+      spd: calculateStat(baseData?.baseStats?.spd || 45, pkmn.level || 1, false),
+    },
+    statStages: pkmn.statStages || { atk: 0, def: 0, spAtk: 0, spDef: 0, spd: 0, accuracy: 0, evasion: 0 },
+    types: Array.isArray(pkmn.types) && pkmn.types.length > 0 ? pkmn.types : (baseData?.types || ['normal']),
+    moves: Array.isArray(pkmn.moves) ? pkmn.moves : [],
+    status: pkmn.status || 'none',
+    exp: pkmn.exp || Math.pow(pkmn.level || 1, 3),
+    expToNext: pkmn.expToNext || Math.pow((pkmn.level || 1) + 1, 3),
+    ability: pkmn.ability || baseData?.abilities?.[0] || 'Overgrow',
+    sprites: sprites,
+    isShiny: !!pkmn.isShiny,
+    isPseudoLegendary: !!pkmn.isPseudoLegendary,
+    isRestricted: !!pkmn.isRestricted,
+    evolution: pkmn.evolution || baseData?.evolution,
   };
 }
 

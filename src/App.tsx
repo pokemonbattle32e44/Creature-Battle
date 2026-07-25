@@ -19,7 +19,7 @@ import { TradeView } from './components/TradeView';
 import { MultiplayerPvPView } from './components/MultiplayerPvPView';
 
 import { PokemonBaseData, PokemonInstance, UserSaveData } from './types/pokemon';
-import { createPokemonInstance } from './utils/pokemonCalc';
+import { createPokemonInstance, normalizePokemonInstance } from './utils/pokemonCalc';
 import { generateWildEncounter } from './utils/encounterGenerator';
 import { STARTERS_AND_POKEMON_DATABASE } from './data/startersAndPokemon';
 import { soundEngine } from './utils/soundEngine';

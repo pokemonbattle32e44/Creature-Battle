@@ -5,6 +5,7 @@ import { TYPE_COLORS, TYPE_NAMES_PT } from '../data/typeChart';
 import { getMove } from '../data/movesData';
 import { soundEngine } from '../utils/soundEngine';
 import { RarityBadge } from './RarityBadge';
+import { getPokemonSpriteStyle } from '../data/startersAndPokemon';
 
 interface TeamViewProps {
   playerTeam: PokemonInstance[];
@@ -24,49 +25,53 @@ export const TeamView: React.FC<TeamViewProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedBoxPkmnIndex, setSelectedBoxPkmnIndex] = useState<number | null>(null);
 
+  const safeTeam = Array.isArray(playerTeam) ? playerTeam.filter(Boolean) : [];
+  const safePcBox = Array.isArray(pcBox) ? pcBox.filter(Boolean) : [];
+
   const selectedPokemon = activeTab === 'team'
-    ? playerTeam[selectedIndex] || playerTeam[0]
-    : selectedBoxPkmnIndex !== null ? pcBox[selectedBoxPkmnIndex] : null;
+    ? safeTeam[selectedIndex] || safeTeam[0] || null
+    : selectedBoxPkmnIndex !== null ? safePcBox[selectedBoxPkmnIndex] || null : null;
 
   const handleSwapOrder = (index: number, direction: 'up' | 'down') => {
     soundEngine.playClick();
     const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= playerTeam.length) return;
+    if (newIndex < 0 || newIndex >= safeTeam.length) return;
 
-    const newTeam = [...playerTeam];
+    const newTeam = [...safeTeam];
     const temp = newTeam[index];
     newTeam[index] = newTeam[newIndex];
     newTeam[newIndex] = temp;
 
-    onUpdateTeamAndBox(newTeam, pcBox);
+    onUpdateTeamAndBox(newTeam, safePcBox);
     setSelectedIndex(newIndex);
   };
 
   const handleDepositToBox = (teamIdx: number) => {
-    if (playerTeam.length <= 1) {
+    if (safeTeam.length <= 1) {
       soundEngine.playHit('notVery');
       alert('Você precisa ter pelo menos 1 Pokémon no seu time!');
       return;
     }
     soundEngine.playClick();
-    const target = playerTeam[teamIdx];
-    const newTeam = playerTeam.filter((_, idx) => idx !== teamIdx);
-    const newBox = [...pcBox, target];
+    const target = safeTeam[teamIdx];
+    const newTeam = safeTeam.filter((_, idx) => idx !== teamIdx);
+    const newBox = [...safePcBox, target];
 
     onUpdateTeamAndBox(newTeam, newBox);
     setSelectedIndex(0);
   };
 
   const handleWithdrawToTeam = (boxIdx: number) => {
-    if (playerTeam.length >= 6) {
+    if (safeTeam.length >= 6) {
       soundEngine.playHit('notVery');
       alert('Sua equipe já está cheia (máximo 6 Pokémon)!');
       return;
     }
     soundEngine.playClick();
-    const target = pcBox[boxIdx];
-    const newBox = pcBox.filter((_, idx) => idx !== boxIdx);
-    const newTeam = [...playerTeam, target];
+    const target = safePcBox[boxIdx];
+    if (!target) return;
+    const newBox = safePcBox.filter((_, idx) => idx !== boxIdx);
+    const newTeam = [...safeTeam, target];
 
     onUpdateTeamAndBox(newTeam, newBox);
     setSelectedBoxPkmnIndex(null);
@@ -74,7 +79,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
 
   // 30 per box
   const boxPageStart = selectedBoxIndex * 30;
-  const currentBoxPokemon = pcBox.slice(boxPageStart, boxPageStart + 30);
+  const currentBoxPokemon = safePcBox.slice(boxPageStart, boxPageStart + 30);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 flex flex-col justify-between select-none">
@@ -145,7 +150,12 @@ export const TeamView: React.FC<TeamViewProps> = ({
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <img src={pkmn.sprites.front} alt={pkmn.displayName} className="w-12 h-12 object-contain" />
+                      <img
+                        src={pkmn.sprites?.front || ''}
+                        alt={pkmn.displayName}
+                        style={getPokemonSpriteStyle(pkmn)}
+                        className="w-12 h-12 object-contain"
+                      />
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-sm text-white capitalize">
@@ -233,8 +243,9 @@ export const TeamView: React.FC<TeamViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center mb-4">
                     <div className="flex justify-center bg-slate-950 p-4 rounded-xl border border-slate-800 relative">
                       <img
-                        src={selectedPokemon.sprites.artwork || selectedPokemon.sprites.animatedFront || selectedPokemon.sprites.front}
+                        src={selectedPokemon.sprites?.artwork || selectedPokemon.sprites?.animatedFront || selectedPokemon.sprites?.front || ''}
                         alt={selectedPokemon.displayName}
+                        style={getPokemonSpriteStyle(selectedPokemon)}
                         className="w-32 h-32 object-contain"
                       />
                     </div>
@@ -360,7 +371,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                             : 'bg-slate-950 border-slate-800 hover:border-slate-700'
                         }`}
                       >
-                        <img src={pkmn.sprites.front} alt={pkmn.displayName} className="w-10 h-10 object-contain" />
+                        <img src={pkmn.sprites?.front || ''} alt={pkmn.displayName} style={getPokemonSpriteStyle(pkmn)} className="w-10 h-10 object-contain" />
                         <span className="text-[10px] font-bold text-white truncate w-full text-center">{pkmn.displayName}</span>
                         <span className="text-[9px] text-slate-400 font-mono">Nv.{pkmn.level}</span>
                       </button>
@@ -379,7 +390,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 {selectedPokemon ? (
                   <div className="space-y-4">
                     <div className="flex items-center gap-4 border-b border-slate-800 pb-3">
-                      <img src={selectedPokemon.sprites.front} alt={selectedPokemon.displayName} className="w-16 h-16 object-contain bg-slate-950 rounded-2xl border border-slate-800" />
+                      <img src={selectedPokemon.sprites?.front || ''} alt={selectedPokemon.displayName} style={getPokemonSpriteStyle(selectedPokemon)} className="w-16 h-16 object-contain bg-slate-950 rounded-2xl border border-slate-800" />
                       <div>
                         <h3 className="text-lg font-black text-white capitalize">{selectedPokemon.displayName}</h3>
                         <p className="text-xs text-slate-400 font-mono">Nível {selectedPokemon.level}</p>

@@ -6,7 +6,8 @@ import { doc, onSnapshot, setDoc, updateDoc, deleteDoc } from 'firebase/firestor
 import { soundEngine } from '../utils/soundEngine';
 import { getMove } from '../data/movesData';
 import { TYPE_COLORS, TYPE_NAMES_PT } from '../data/typeChart';
-import { calculateDamage, getEffectiveStat } from '../utils/pokemonCalc';
+import { calculateDamage, getEffectiveStat, normalizePokemonInstance } from '../utils/pokemonCalc';
+import { getPokemonSpriteStyle } from '../data/startersAndPokemon';
 
 interface MultiplayerPvPViewProps {
   userCloudProfile: UserCloudData;
@@ -86,58 +87,86 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
   // Host creates room
   const handleCreateRoom = async () => {
     soundEngine.playClick();
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const battleRef = doc(db, 'pvp_battles', code);
+    if (!userCloudProfile?.team || userCloudProfile.team.length === 0) {
+      setStatusMessage('Você precisa de pelo menos 1 Pokémon na sua equipe para criar uma batalha!');
+      return;
+    }
+    try {
+      setStatusMessage('Criando sala de batalha...');
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const battleRef = doc(db, 'pvp_battles', code);
 
-    const initialDoc: BattleStateDoc = {
-      id: code,
-      hostUid: userCloudProfile.uid,
-      hostNickname: userCloudProfile.nickname,
-      hostAvatar: userCloudProfile.avatar,
-      hostElo: userCloudProfile.elo || 1000,
-      hostTeam: JSON.parse(JSON.stringify(userCloudProfile.team)),
-      hostActiveIndex: 0,
-      hostAction: null,
+      const normalizedTeam = userCloudProfile.team.map(normalizePokemonInstance);
 
-      guestUid: '',
-      guestNickname: '',
-      guestAvatar: '',
-      guestElo: 1000,
-      guestTeam: [],
-      guestActiveIndex: 0,
-      guestAction: null,
+      const initialDoc: BattleStateDoc = {
+        id: code,
+        hostUid: userCloudProfile.uid || 'anon',
+        hostNickname: userCloudProfile.nickname || 'Treinador Host',
+        hostAvatar: userCloudProfile.avatar || '',
+        hostElo: userCloudProfile.elo || 1000,
+        hostTeam: normalizedTeam,
+        hostActiveIndex: 0,
+        hostAction: null,
 
-      status: 'waiting',
-      logs: [`Sala de Arena PvP #${code} criada! Aguardando um oponente...`],
-      createdAt: new Date().toISOString(),
-    };
+        guestUid: '',
+        guestNickname: '',
+        guestAvatar: '',
+        guestElo: 1000,
+        guestTeam: [],
+        guestActiveIndex: 0,
+        guestAction: null,
 
-    await setDoc(battleRef, initialDoc);
-    setActiveBattleId(code);
-    setBattleCode(code);
-    setStatusMessage(`Sala de Arena #${code} criada. Compartilhe o código para iniciar a partida!`);
+        status: 'waiting',
+        logs: [`Sala de Arena PvP #${code} criada! Aguardando um oponente...`],
+        createdAt: new Date().toISOString(),
+      };
+
+      await setDoc(battleRef, sanitizeData(initialDoc));
+      setActiveBattleId(code);
+      setBattleCode(code);
+      setStatusMessage(`Sala de Arena #${code} criada! Compartilhe o código para seu oponente entrar.`);
+    } catch (err: any) {
+      console.error('Erro ao criar sala PvP:', err);
+      setStatusMessage(`Erro ao criar sala: ${err.message || 'Erro no banco de dados. Tente novamente.'}`);
+    }
   };
 
   // Guest joins room
   const handleJoinRoom = async () => {
-    if (!battleCode.trim()) return;
+    if (!battleCode.trim()) {
+      setStatusMessage('Por favor, digite o código de 6 dígitos da sala.');
+      return;
+    }
     soundEngine.playClick();
-    const code = battleCode.trim();
-    const battleRef = doc(db, 'pvp_battles', code);
+    if (!userCloudProfile?.team || userCloudProfile.team.length === 0) {
+      setStatusMessage('Você precisa de pelo menos 1 Pokémon na sua equipe para entrar na batalha!');
+      return;
+    }
+    try {
+      setStatusMessage('Entrando na sala...');
+      const code = battleCode.trim();
+      const battleRef = doc(db, 'pvp_battles', code);
 
-    await updateDoc(battleRef, {
-      guestUid: userCloudProfile.uid,
-      guestNickname: userCloudProfile.nickname,
-      guestAvatar: userCloudProfile.avatar,
-      guestElo: userCloudProfile.elo || 1000,
-      guestTeam: JSON.parse(JSON.stringify(userCloudProfile.team)) as any,
-      guestActiveIndex: 0,
-      status: 'in_progress',
-      logs: [`${userCloudProfile.nickname} entrou na batalha! A arena Pokémon começou!`],
-    });
+      const normalizedTeam = userCloudProfile.team.map(normalizePokemonInstance);
 
-    setActiveBattleId(code);
-    setStatusMessage(`Entrou na Arena #${code}! Batalha em andamento!`);
+      const payload = {
+        guestUid: userCloudProfile.uid || 'anon',
+        guestNickname: userCloudProfile.nickname || 'Treinador Convidado',
+        guestAvatar: userCloudProfile.avatar || '',
+        guestElo: userCloudProfile.elo || 1000,
+        guestTeam: normalizedTeam as any,
+        guestActiveIndex: 0,
+        status: 'in_progress',
+        logs: [`${userCloudProfile.nickname || 'Treinador Convidado'} entrou na batalha! A arena Pokémon começou!`],
+      };
+
+      await updateDoc(battleRef, sanitizeData(payload));
+      setActiveBattleId(code);
+      setStatusMessage(`Entrou na Arena #${code}! Batalha em andamento!`);
+    } catch (err: any) {
+      console.error('Erro ao entrar na sala PvP:', err);
+      setStatusMessage(`Erro ao entrar na sala: ${err.message || 'Sala não encontrada ou indisponível.'}`);
+    }
   };
 
   // Submit move or switch action
@@ -439,8 +468,9 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
               {opponentActivePkmn && (
                 <div className="relative pr-8 pt-2">
                   <img
-                    src={opponentActivePkmn.sprites.front}
+                    src={opponentActivePkmn.sprites?.front || ''}
                     alt={opponentActivePkmn.displayName}
+                    style={getPokemonSpriteStyle(opponentActivePkmn)}
                     className="w-28 h-28 object-contain filter drop-shadow-2xl animate-bounce-subtle"
                   />
                 </div>
@@ -453,8 +483,9 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
               {myActivePkmn && (
                 <div className="relative pl-8 pb-2">
                   <img
-                    src={myActivePkmn.sprites.back || myActivePkmn.sprites.front}
+                    src={myActivePkmn.sprites?.back || myActivePkmn.sprites?.front || ''}
                     alt={myActivePkmn.displayName}
+                    style={getPokemonSpriteStyle(myActivePkmn)}
                     className="w-32 h-32 object-contain filter drop-shadow-2xl scale-110"
                   />
                 </div>
