@@ -11,7 +11,7 @@ import {
   User,
 } from 'firebase/auth';
 import {
-  getFirestore,
+  initializeFirestore,
   doc,
   setDoc,
   getDoc,
@@ -44,7 +44,15 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfigJson.firestoreDatabaseId || '(default)');
+export const db = initializeFirestore(
+  app,
+  { ignoreUndefinedProperties: true },
+  firebaseConfigJson.firestoreDatabaseId || '(default)'
+);
+
+export function sanitizeData<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
 
 export const ADMIN_EMAILS = ['abacate2035@gmail.com', 'canalcondominio7@gmail.com'];
 
@@ -61,7 +69,6 @@ export interface UserCloudData {
   money: number;
   isAdmin: boolean;
   elo: number;
-  league: string;
   wins: number;
   losses: number;
   winStreak: number;
@@ -76,26 +83,16 @@ export interface UserCloudData {
   lastLogin: string;
 }
 
-export function calculateLeague(elo: number): string {
-  if (elo >= 2500) return 'Top Global';
-  if (elo >= 2000) return 'Mestre';
-  if (elo >= 1600) return 'Diamante';
-  if (elo >= 1300) return 'Platina';
-  if (elo >= 1000) return 'Ouro';
-  if (elo >= 700) return 'Prata';
-  return 'Bronze';
-}
-
 // User Profile Functions
 export async function syncUserToCloud(userProfile: UserCloudData): Promise<void> {
   if (!userProfile.uid) return;
   const userRef = doc(db, 'users', userProfile.uid);
-  const dataToSave = {
+  const rawData = {
     ...userProfile,
     isAdmin: checkIsAdmin(userProfile.email),
-    league: calculateLeague(userProfile.elo || 1000),
     lastLogin: new Date().toISOString(),
   };
+  const dataToSave = sanitizeData(rawData);
   await setDoc(userRef, dataToSave, { merge: true });
 }
 
@@ -228,11 +225,12 @@ export interface GiftData {
 
 export async function sendGiftToUser(gift: GiftData): Promise<void> {
   const giftRef = collection(db, 'gifts');
-  await addDoc(giftRef, {
+  const payload = sanitizeData({
     ...gift,
     status: 'pending',
     createdAt: new Date().toISOString(),
   });
+  await addDoc(giftRef, payload);
   await addSystemLog('gift', [gift.fromUid, gift.toUid], `${gift.fromNickname} enviou um presente (${gift.type}) para o amigo.`);
 }
 

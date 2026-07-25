@@ -134,9 +134,10 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
     if (giftType === 'pokemon') {
       if (!selectedPokemon) return;
       payloadGift.pokemon = selectedPokemon;
-      // Remove from team or box
-      updatedProfile.team = updatedProfile.team.filter((p) => p.id !== selectedPokemon.id);
-      updatedProfile.pcBox = updatedProfile.pcBox.filter((p) => p.id !== selectedPokemon.id);
+      // Remove from team or box using instanceId
+      const targetInstId = selectedPokemon.instanceId;
+      updatedProfile.team = updatedProfile.team.filter((p) => (p.instanceId || (p as any).id) !== targetInstId);
+      updatedProfile.pcBox = updatedProfile.pcBox.filter((p) => (p.instanceId || (p as any).id) !== targetInstId);
     } else if (giftType === 'item') {
       if (!selectedItemKey || !updatedProfile.inventory[selectedItemKey]) return;
       payloadGift.itemKey = selectedItemKey;
@@ -271,7 +272,7 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
                         <img src={user.avatar} alt={user.nickname} className="w-8 h-8 rounded-full" />
                         <div>
                           <p className="text-xs font-bold text-white">{user.nickname}</p>
-                          <p className="text-[10px] text-slate-400">Liga: {user.league || 'Ouro'}</p>
+                          <p className="text-[10px] text-slate-400">ELO: {user.elo || 1000}</p>
                         </div>
                       </div>
                       <button
@@ -305,9 +306,6 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
                         <div>
                           <p className="text-sm font-bold text-white flex items-center gap-2">
                             {friend.nickname}
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 font-bold border border-slate-700">
-                              {friend.league || 'Ouro'}
-                            </span>
                           </p>
                           <p className="text-[10px] text-slate-400">ELO: {friend.elo || 1000} | Vitórias: {friend.wins || 0}</p>
                         </div>
@@ -482,17 +480,20 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
                     <select
                       onChange={(e) => {
                         const allPkmn = [...userCloudProfile.team, ...userCloudProfile.pcBox];
-                        const found = allPkmn.find((p) => p.id === e.target.value);
+                        const found = allPkmn.find((p) => (p.instanceId || (p as any).id) === e.target.value);
                         setSelectedPokemon(found || null);
                       }}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
                     >
                       <option value="">-- Selecione um Pokémon --</option>
-                      {[...userCloudProfile.team, ...userCloudProfile.pcBox].map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.displayName} (Nv.{p.level}) {p.isShiny ? '✨' : ''}
-                        </option>
-                      ))}
+                      {[...userCloudProfile.team, ...userCloudProfile.pcBox].map((p) => {
+                        const instId = p.instanceId || (p as any).id;
+                        return (
+                          <option key={instId} value={instId}>
+                            {p.displayName} (Nv.{p.level}) {p.isShiny ? '✨' : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 )}

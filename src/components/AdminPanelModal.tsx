@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Crown, Sparkles, DollarSign, PlusCircle, ShieldAlert, X, Gift, Search } from 'lucide-react';
+import { Crown, Sparkles, DollarSign, PlusCircle, ShieldAlert, X, Package } from 'lucide-react';
 import { STARTERS_AND_POKEMON_DATABASE } from '../data/startersAndPokemon';
+import { ITEMS_DATABASE } from '../data/itemsData';
 import { createPokemonInstance } from '../utils/pokemonCalc';
 import { PokemonInstance } from '../types/pokemon';
-import { UserCloudData, syncUserToCloud } from '../utils/firebase';
+import { UserCloudData, syncUserToCloud, addSystemLog } from '../utils/firebase';
 import { soundEngine } from '../utils/soundEngine';
 
 interface AdminPanelModalProps {
@@ -22,6 +23,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [level, setLevel] = useState<number>(100);
   const [isShiny, setIsShiny] = useState<boolean>(true);
   const [targetDestination, setTargetDestination] = useState<'team' | 'box'>('team');
+  const [selectedItemKey, setSelectedItemKey] = useState<string>('master_ball');
+  const [itemQuantity, setItemQuantity] = useState<number>(10);
   const [message, setMessage] = useState<string | null>(null);
 
   const handleAddMoney = async () => {
@@ -29,8 +32,24 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     const add = parseInt(moneyAmount, 10) || 0;
     const updated = { ...userCloudProfile, money: userCloudProfile.money + add };
     await syncUserToCloud(updated);
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin adicionou $${add.toLocaleString()} Pokedólares.`);
     onUpdateProfile(updated);
     setMessage(`+${add.toLocaleString()} Pokedólares adicionados à sua conta!`);
+  };
+
+  const handleAddItem = async () => {
+    soundEngine.playCatchSuccess();
+    const updated = { ...userCloudProfile };
+    const currentQty = updated.inventory[selectedItemKey] || 0;
+    updated.inventory = {
+      ...updated.inventory,
+      [selectedItemKey]: currentQty + itemQuantity,
+    };
+    await syncUserToCloud(updated);
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin adicionou ${itemQuantity}x ${selectedItemKey}.`);
+    onUpdateProfile(updated);
+    const itemName = ITEMS_DATABASE[selectedItemKey]?.name || selectedItemKey;
+    setMessage(`+${itemQuantity}x ${itemName} adicionados ao seu inventário!`);
   };
 
   const handleSpawnPokemon = async () => {
@@ -58,6 +77,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
 
     await syncUserToCloud(updated);
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin gerou Pokémon ${newPkmn.displayName} Nv.${level}.`);
     onUpdateProfile(updated);
     setMessage(`⚡ ${newPkmn.displayName} Nível ${level} ${isShiny ? '✨ (Shiny)' : ''} gerado com sucesso!`);
   };
@@ -94,7 +114,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         )}
 
         {/* Section 1: Money */}
-        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6 space-y-3">
+        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-4 space-y-3">
           <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-emerald-400" /> Adicionar Dinheiro
           </h4>
@@ -112,6 +132,40 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               Adicionar $
             </button>
           </div>
+        </div>
+
+        {/* Section 2: Items */}
+        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6 space-y-3">
+          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+            <Package className="w-4 h-4 text-sky-400" /> Adicionar Itens
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <select
+              value={selectedItemKey}
+              onChange={(e) => setSelectedItemKey(e.target.value)}
+              className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+            >
+              {Object.entries(ITEMS_DATABASE).map(([key, item]) => (
+                <option key={key} value={key}>
+                  {item.name} ({item.category})
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              value={itemQuantity}
+              onChange={(e) => setItemQuantity(Number(e.target.value))}
+              min={1}
+              max={999}
+              className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-sky-400 font-bold"
+            />
+          </div>
+          <button
+            onClick={handleAddItem}
+            className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition-all shadow-md"
+          >
+            Adicionar Itens ao Inventário
+          </button>
         </div>
 
         {/* Section 2: Spawn Special/Any Pokemon */}

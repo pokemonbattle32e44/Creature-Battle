@@ -109,7 +109,6 @@ export default function App() {
             wins: battlesWon,
             losses: 0,
             elo: 1000,
-            league: 'Bronze',
             winStreak: 0,
             isAdmin: adminStatus,
             createdAt: new Date().toISOString(),
@@ -478,6 +477,10 @@ export default function App() {
       {currentView === 'trade' && userCloudProfile && (
         <TradeView
           userCloudProfile={userCloudProfile}
+          onUpdateProfile={(updated) => {
+            setUserCloudProfile(updated);
+            setPlayerTeam(updated.team);
+          }}
           onBack={() => setCurrentView('main')}
         />
       )}
@@ -525,12 +528,18 @@ export default function App() {
         />
       )}
 
-      {/* Team Management View */}
+      {/* Team Management & PC Box View */}
       {currentView === 'team' && (
         <TeamView
           playerTeam={playerTeam}
-          onUpdateTeam={(newTeam) => {
+          pcBox={userCloudProfile?.pcBox || []}
+          onUpdateTeamAndBox={(newTeam, newBox) => {
             setPlayerTeam(newTeam);
+            if (userCloudProfile) {
+              const updated = { ...userCloudProfile, team: newTeam, pcBox: newBox };
+              setUserCloudProfile(updated);
+              syncUserToCloud(updated);
+            }
             handleSaveGame();
           }}
           onBack={() => setCurrentView('main')}
@@ -577,8 +586,13 @@ export default function App() {
       {/* Auth Modal */}
       {isAuthOpen && (
         <AuthModal
-          user={currentUser}
+          currentUser={currentUser}
           userCloudProfile={userCloudProfile}
+          onUpdateProfile={(updated) => {
+            setUserCloudProfile(updated);
+            if (updated.team) setPlayerTeam(updated.team);
+            if (typeof updated.money === 'number') setPokedollars(updated.money);
+          }}
           onClose={() => setIsAuthOpen(false)}
         />
       )}
@@ -587,6 +601,11 @@ export default function App() {
       {isFriendsOpen && userCloudProfile && (
         <FriendsAndGiftsModal
           userCloudProfile={userCloudProfile}
+          onUpdateProfile={(updated) => {
+            setUserCloudProfile(updated);
+            if (updated.team) setPlayerTeam(updated.team);
+            if (typeof updated.money === 'number') setPokedollars(updated.money);
+          }}
           onClose={() => setIsFriendsOpen(false)}
         />
       )}
@@ -603,16 +622,12 @@ export default function App() {
       {isAdminPanelOpen && userCloudProfile && (
         <AdminPanelModal
           userCloudProfile={userCloudProfile}
+          onUpdateProfile={(updated) => {
+            setUserCloudProfile(updated);
+            if (updated.team) setPlayerTeam(updated.team);
+            if (typeof updated.money === 'number') setPokedollars(updated.money);
+          }}
           onClose={() => setIsAdminPanelOpen(false)}
-          onSpawnPokemon={(pokemon) => {
-            const newTeam = [...playerTeam, pokemon].slice(0, 6);
-            setPlayerTeam(newTeam);
-            handleSaveGame();
-          }}
-          onAddMoney={(amount) => {
-            setPokedollars((prev) => prev + amount);
-            handleSaveGame();
-          }}
         />
       )}
 

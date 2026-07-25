@@ -62,7 +62,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           money: isAdminUser ? 1000000 : 3500,
           isAdmin: isAdminUser,
           elo: 1000,
-          league: 'Ouro',
           wins: 0,
           losses: 0,
           winStreak: 0,
@@ -91,7 +90,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             money: isAdminUser ? 1000000 : 3500,
             isAdmin: isAdminUser,
             elo: 1000,
-            league: 'Ouro',
             wins: 0,
             losses: 0,
             winStreak: 0,
@@ -136,7 +134,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           money: isAdminUser ? 1000000 : 3500,
           isAdmin: isAdminUser,
           elo: 1000,
-          league: 'Ouro',
           wins: 0,
           losses: 0,
           winStreak: 0,
@@ -211,10 +208,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 text-xs space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Liga Competitiva:</span>
-                <span className="font-bold text-amber-300">{userCloudProfile?.league || 'Ouro'}</span>
-              </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Pontuação ELO:</span>
                 <span className="font-bold text-sky-400">{userCloudProfile?.elo || 1000}</span>

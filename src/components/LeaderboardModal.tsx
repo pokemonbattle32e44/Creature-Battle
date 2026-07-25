@@ -41,7 +41,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) =
               <h3 className="text-xl font-black text-white flex items-center gap-2">
                 Ranking Global de Treinadores
               </h3>
-              <p className="text-xs text-slate-400">Classificação Oficial de Liga Competitiva PvP</p>
+              <p className="text-xs text-slate-400">Classificação Oficial Competitiva PvP</p>
             </div>
           </div>
 
@@ -122,7 +122,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) =
 
                   <div className="text-right">
                     <span className="text-xs font-bold text-amber-300 block">
-                      {player.league || 'Ouro'}
+                      🔥 {player.winStreak || 0} Sequência
                     </span>
                     <span className="text-sm font-mono font-black text-sky-400">
                       {player.elo || 1000} ELO

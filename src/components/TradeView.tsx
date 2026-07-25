@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Repeat, CheckCircle, ShieldAlert, Sparkles, X, Lock, Flame } from 'lucide-react';
+import { ArrowLeft, Repeat, CheckCircle, ShieldAlert, Sparkles, X, Lock, Flame, Shield, Zap, Heart, Swords } from 'lucide-react';
 import { PokemonInstance } from '../types/pokemon';
 import { UserCloudData, db, syncUserToCloud, addSystemLog } from '../utils/firebase';
 import { doc, onSnapshot, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { soundEngine } from '../utils/soundEngine';
+import { getMove } from '../data/movesData';
+import { TYPE_COLORS, TYPE_NAMES_PT } from '../data/typeChart';
 
 interface TradeViewProps {
   userCloudProfile: UserCloudData;
@@ -20,7 +22,6 @@ export const TradeView: React.FC<TradeViewProps> = ({
   const [activeTradeId, setActiveTradeId] = useState<string | null>(null);
   const [tradeState, setTradeState] = useState<any>(null);
   const [selectedMyPokemon, setSelectedMyPokemon] = useState<PokemonInstance | null>(null);
-  const [isLocked, setIsLocked] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -31,10 +32,11 @@ export const TradeView: React.FC<TradeViewProps> = ({
     const tradeRef = doc(db, 'trades', activeTradeId);
     const unsub = onSnapshot(tradeRef, async (snap) => {
       if (!snap.exists()) {
-        setStatusMessage('A sala de troca foi encerrada pelo outro jogador.');
+        setStatusMessage('A sala de troca foi encerrada ou cancelada.');
         setActiveTradeId(null);
         setTradeState(null);
-        setIsLocked(false);
+        setSelectedMyPokemon(null);
+        setCountdown(null);
         return;
       }
 
@@ -42,22 +44,22 @@ export const TradeView: React.FC<TradeViewProps> = ({
       setTradeState(data);
 
       const isHost = data.hostUid === userCloudProfile.uid;
-      const myPokemon = isHost ? data.hostPokemon : data.guestPokemon;
-      const partnerPokemon = isHost ? data.guestPokemon : data.hostPokemon;
       const myConfirmed = isHost ? data.hostConfirmed : data.guestConfirmed;
       const partnerConfirmed = isHost ? data.guestConfirmed : data.hostConfirmed;
 
-      // Check if both confirmed -> initiate countdown & execute swap
+      // Both players confirmed -> countdown & execute
       if (myConfirmed && partnerConfirmed && data.status === 'pending') {
-        setStatusMessage('Ambos confirmaram! Realizando troca em 3 segundos...');
+        setStatusMessage('Ambos os treinadores confirmaram! Realizando transferência segura...');
         setCountdown(3);
+      } else {
+        if (countdown !== null) setCountdown(null);
       }
     });
 
     return () => unsub();
   }, [activeTradeId, userCloudProfile.uid]);
 
-  // Countdown handler
+  // Countdown timer handler
   useEffect(() => {
     if (countdown === null) return;
     if (countdown > 0) {
@@ -73,10 +75,13 @@ export const TradeView: React.FC<TradeViewProps> = ({
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const tradeRef = doc(db, 'trades', code);
     await setDoc(tradeRef, {
+      id: code,
       hostUid: userCloudProfile.uid,
       hostNickname: userCloudProfile.nickname,
+      hostAvatar: userCloudProfile.avatar,
       guestUid: '',
       guestNickname: '',
+      guestAvatar: '',
       hostPokemon: null,
       guestPokemon: null,
       hostConfirmed: false,
@@ -97,6 +102,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
     await updateDoc(tradeRef, {
       guestUid: userCloudProfile.uid,
       guestNickname: userCloudProfile.nickname,
+      guestAvatar: userCloudProfile.avatar,
     });
 
     setActiveTradeId(tradeCode.trim());
@@ -104,7 +110,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
   };
 
   const handleSelectPokemonForTrade = async (pkmn: PokemonInstance) => {
-    if (!activeTradeId || isLocked) return;
+    if (!activeTradeId) return;
     soundEngine.playClick();
     setSelectedMyPokemon(pkmn);
 
@@ -112,9 +118,9 @@ export const TradeView: React.FC<TradeViewProps> = ({
     const tradeRef = doc(db, 'trades', activeTradeId);
 
     if (isHost) {
-      await updateDoc(tradeRef, { hostPokemon: pkmn, hostConfirmed: false });
+      await updateDoc(tradeRef, { hostPokemon: pkmn, hostConfirmed: false, guestConfirmed: false });
     } else {
-      await updateDoc(tradeRef, { guestPokemon: pkmn, guestConfirmed: false });
+      await updateDoc(tradeRef, { guestPokemon: pkmn, hostConfirmed: false, guestConfirmed: false });
     }
   };
 
@@ -125,7 +131,6 @@ export const TradeView: React.FC<TradeViewProps> = ({
     const currentConfirmed = isHost ? tradeState?.hostConfirmed : tradeState?.guestConfirmed;
     const newConfirmed = !currentConfirmed;
 
-    setIsLocked(newConfirmed);
     const tradeRef = doc(db, 'trades', activeTradeId);
     if (isHost) {
       await updateDoc(tradeRef, { hostConfirmed: newConfirmed });
@@ -144,33 +149,42 @@ export const TradeView: React.FC<TradeViewProps> = ({
 
     if (!sentPokemon || !receivedPokemon) return;
 
-    // Update player profile
-    const updated = { ...userCloudProfile };
-    // Remove sent
-    updated.team = updated.team.filter((p) => p.id !== sentPokemon.id);
-    updated.pcBox = updated.pcBox.filter((p) => p.id !== sentPokemon.id);
+    const sentInstId = sentPokemon.instanceId || sentPokemon.id;
 
-    // Add received
+    // Update player profile atomically
+    const updated = { ...userCloudProfile };
+    // Remove sent pokemon using instanceId
+    updated.team = updated.team.filter((p) => (p.instanceId || p.id) !== sentInstId);
+    updated.pcBox = updated.pcBox.filter((p) => (p.instanceId || p.id) !== sentInstId);
+
+    // Add received pokemon to PC Box
     updated.pcBox = [...updated.pcBox, receivedPokemon];
     if (!updated.pokedexCaught.includes(receivedPokemon.pokedexId)) {
       updated.pokedexCaught = [...updated.pokedexCaught, receivedPokemon.pokedexId];
+    }
+    if (!updated.pokedexSeen.includes(receivedPokemon.pokedexId)) {
+      updated.pokedexSeen = [...updated.pokedexSeen, receivedPokemon.pokedexId];
     }
 
     await syncUserToCloud(updated);
     onUpdateProfile(updated);
 
-    await addSystemLog('trade', [tradeState.hostUid, tradeState.guestUid], `Troca concluída: ${sentPokemon.displayName} por ${receivedPokemon.displayName}.`);
+    await addSystemLog(
+      'trade',
+      [tradeState.hostUid, tradeState.guestUid],
+      `Troca Concluída: ${sentPokemon.displayName} (Nv.${sentPokemon.level}) por ${receivedPokemon.displayName} (Nv.${receivedPokemon.level}).`
+    );
 
-    // Clean up trade session if host
+    // Clean up trade session doc if host
     if (isHost) {
       await deleteDoc(doc(db, 'trades', activeTradeId));
     }
 
-    setStatusMessage(`🎉 Troca concluída! Você recebeu ${receivedPokemon.displayName} (Nv. ${receivedPokemon.level})!`);
+    setStatusMessage(`🎉 Troca concluída com sucesso! Você recebeu ${receivedPokemon.displayName}!`);
     setCountdown(null);
     setActiveTradeId(null);
     setTradeState(null);
-    setIsLocked(false);
+    setSelectedMyPokemon(null);
   };
 
   const handleCancelTrade = async () => {
@@ -180,13 +194,14 @@ export const TradeView: React.FC<TradeViewProps> = ({
     }
     setActiveTradeId(null);
     setTradeState(null);
-    setIsLocked(false);
-    setStatusMessage('Troca cancelada.');
+    setSelectedMyPokemon(null);
+    setCountdown(null);
+    setStatusMessage('Troca cancelada. Nenhum Pokémon foi transferido.');
   };
 
   const isHost = tradeState?.hostUid === userCloudProfile.uid;
   const partnerNickname = isHost ? tradeState?.guestNickname : tradeState?.hostNickname;
-  const partnerPokemon = isHost ? tradeState?.guestPokemon : tradeState?.hostPokemon;
+  const partnerPokemon: PokemonInstance | null = isHost ? tradeState?.guestPokemon : tradeState?.hostPokemon;
   const partnerConfirmed = isHost ? tradeState?.guestConfirmed : tradeState?.hostConfirmed;
   const myConfirmed = isHost ? tradeState?.hostConfirmed : tradeState?.guestConfirmed;
 
@@ -200,6 +215,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
           <button
             onClick={() => {
               soundEngine.playClick();
+              if (activeTradeId) handleCancelTrade();
               onBack();
             }}
             className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 text-xs font-bold transition-all active:scale-95"
@@ -208,7 +224,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
           </button>
 
           <div className="flex items-center gap-2 bg-slate-900 border border-amber-500/30 px-4 py-2 rounded-xl text-amber-400 font-bold text-xs">
-            <Repeat className="w-4 h-4" /> TROCAS ONLINE EM TEMPO REAL
+            <Repeat className="w-4 h-4" /> CENTRO DE TROCAS ONLINE
           </div>
         </div>
 
@@ -226,16 +242,16 @@ export const TradeView: React.FC<TradeViewProps> = ({
               <div className="w-16 h-16 bg-gradient-to-tr from-amber-500 to-yellow-500 rounded-3xl mx-auto flex items-center justify-center shadow-lg shadow-amber-500/20">
                 <Repeat className="w-8 h-8 text-slate-950" />
               </div>
-              <h2 className="text-2xl font-black text-white">Centro de Trocas Pokémon</h2>
+              <h2 className="text-2xl font-black text-white">Sistema de Trocas em Tempo Real</h2>
               <p className="text-xs text-slate-400">
-                Troque seus Pokémon com qualquer jogador online do mundo com total segurança.
+                Ofereça 1 Pokémon, examine detalhadamente o Pokémon do outro jogador e confirme a troca com 100% de segurança.
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
-                <h3 className="text-sm font-bold text-amber-400">Criar Nova Sala de Troca</h3>
-                <p className="text-xs text-slate-400">Gere um código exclusivo para compartilhar com seu amigo.</p>
+                <h3 className="text-sm font-bold text-amber-400">Criar Sala de Troca</h3>
+                <p className="text-xs text-slate-400">Gere um código exclusivo de 6 dígitos para seu parceiro.</p>
                 <button
                   onClick={handleCreateRoom}
                   className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all"
@@ -245,7 +261,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
               </div>
 
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
-                <h3 className="text-sm font-bold text-sky-400">Entrar em uma Sala Existente</h3>
+                <h3 className="text-sm font-bold text-sky-400">Entrar em uma Sala</h3>
                 <input
                   type="text"
                   value={tradeCode}
@@ -264,7 +280,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
           </div>
         ) : (
           /* Active Trade Room UI */
-          <div className="max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
+          <div className="max-w-5xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div>
                 <span className="text-xs text-slate-400 font-bold uppercase">Sala de Troca</span>
@@ -275,128 +291,210 @@ export const TradeView: React.FC<TradeViewProps> = ({
                 onClick={handleCancelTrade}
                 className="px-4 py-2 bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-500/30 rounded-xl font-bold text-xs flex items-center gap-1.5"
               >
-                <X className="w-4 h-4" /> Cancelar Troca
+                <X className="w-4 h-4" /> Cancelar / Sair da Troca
               </button>
             </div>
 
             {/* Countdown Overlay */}
             {countdown !== null && (
-              <div className="p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl text-center space-y-1">
-                <span className="text-xs font-bold text-amber-300 uppercase">Confirmando Troca em</span>
-                <p className="text-4xl font-black text-amber-400 font-mono animate-pulse">{countdown}</p>
+              <div className="p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl text-center space-y-1 animate-pulse">
+                <span className="text-xs font-bold text-amber-300 uppercase">Transferindo Pokémon em</span>
+                <p className="text-4xl font-black text-amber-400 font-mono">{countdown}</p>
               </div>
             )}
 
-            {/* Two Side-by-Side Trade Cards */}
+            {/* Side-by-Side Trade Detailed Comparison Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* My Offer */}
-              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 relative">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400">Seu Pokémon (Você)</span>
-                  {myConfirmed ? (
-                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                      <CheckCircle className="w-4 h-4" /> Confirmado
-                    </span>
+              {/* My Offer Detail Card */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 relative flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3 border-b border-slate-800/80 pb-2">
+                    <span className="text-xs font-bold text-slate-300">Sua Oferta ({userCloudProfile.nickname})</span>
+                    {myConfirmed ? (
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30">
+                        <CheckCircle className="w-3.5 h-3.5" /> Confirmado
+                      </span>
+                    ) : (
+                      <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/30">
+                        Pendente
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedMyPokemon ? (
+                    <div className="space-y-3">
+                      {/* Sprite & Name */}
+                      <div className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
+                        <img src={selectedMyPokemon.sprites.front} alt={selectedMyPokemon.displayName} className="w-16 h-16 object-contain" />
+                        <div>
+                          <p className="text-sm font-black text-white flex items-center gap-1.5">
+                            {selectedMyPokemon.displayName}
+                            {selectedMyPokemon.isShiny && <span className="text-amber-400 text-xs">✨ Shiny</span>}
+                          </p>
+                          <p className="text-xs text-slate-400 font-mono">Nível {selectedMyPokemon.level}</p>
+                          <p className="text-[10px] text-slate-500">Habilidade: {selectedMyPokemon.ability}</p>
+                        </div>
+                      </div>
+
+                      {/* IVs / Stats */}
+                      <div className="grid grid-cols-3 gap-1.5 text-center font-mono text-[10px]">
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">HP</span>
+                          <span className="font-bold text-white">{selectedMyPokemon.maxHp}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">ATQ</span>
+                          <span className="font-bold text-white">{selectedMyPokemon.calculatedStats.atk}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">DEF</span>
+                          <span className="font-bold text-white">{selectedMyPokemon.calculatedStats.def}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">SP.ATQ</span>
+                          <span className="font-bold text-white">{selectedMyPokemon.calculatedStats.spAtk}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">SP.DEF</span>
+                          <span className="font-bold text-white">{selectedMyPokemon.calculatedStats.spDef}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">SPD</span>
+                          <span className="font-bold text-white">{selectedMyPokemon.calculatedStats.spd}</span>
+                        </div>
+                      </div>
+
+                      {/* Item & Moves */}
+                      <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-[11px] space-y-1">
+                        <p className="text-slate-400">Item Equipado: <span className="font-bold text-white">{selectedMyPokemon.heldItem || 'Nenhum'}</span></p>
+                        <p className="text-slate-400">Golpes: <span className="font-bold text-indigo-300">{selectedMyPokemon.moves.map(m => getMove(m.moveId).name).join(', ')}</span></p>
+                      </div>
+                    </div>
                   ) : (
-                    <span className="text-xs font-bold text-amber-400">Aguardando Confirmação</span>
+                    <div className="py-12 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                      Escolha um Pokémon da sua lista abaixo
+                    </div>
                   )}
                 </div>
-
-                {selectedMyPokemon ? (
-                  <div className="flex items-center gap-4 bg-slate-900 p-3 rounded-2xl border border-slate-800">
-                    <img
-                      src={selectedMyPokemon.sprites.front}
-                      alt={selectedMyPokemon.displayName}
-                      className="w-16 h-16 object-contain"
-                    />
-                    <div>
-                      <p className="text-sm font-bold text-white flex items-center gap-2">
-                        {selectedMyPokemon.displayName}
-                        {selectedMyPokemon.isShiny && <span className="text-amber-400 text-xs">✨</span>}
-                      </p>
-                      <p className="text-xs text-slate-400 font-mono">Nível {selectedMyPokemon.level}</p>
-                      <p className="text-[10px] text-slate-500">Nature: {selectedMyPokemon.nature}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    Selecione um Pokémon abaixo para oferecer
-                  </div>
-                )}
 
                 <button
                   onClick={handleToggleConfirm}
                   disabled={!selectedMyPokemon}
-                  className={`w-full py-3 font-bold text-xs rounded-xl shadow-lg transition-all ${
+                  className={`w-full py-3 font-bold text-xs rounded-xl shadow-lg transition-all mt-4 ${
                     myConfirmed
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black'
                   }`}
                 >
-                  {myConfirmed ? 'Desfazer Confirmação' : 'Confirmar Este Pokémon'}
+                  {myConfirmed ? 'Desfazer Confirmação' : 'Confirmar Troca Deste Pokémon'}
                 </button>
               </div>
 
-              {/* Partner Offer */}
-              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 relative">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400">
-                    Parceiro: {partnerNickname || 'Aguardando jogador...'}
-                  </span>
-                  {partnerConfirmed ? (
-                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                      <CheckCircle className="w-4 h-4" /> Confirmado
+              {/* Partner Offer Detail Card */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 relative flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3 border-b border-slate-800/80 pb-2">
+                    <span className="text-xs font-bold text-slate-300">
+                      Parceiro ({partnerNickname || 'Aguardando oponente...'})
                     </span>
+                    {partnerConfirmed ? (
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30">
+                        <CheckCircle className="w-3.5 h-3.5" /> Confirmado
+                      </span>
+                    ) : (
+                      <span className="text-xs font-bold text-slate-500 bg-slate-900 px-2.5 py-1 rounded-full border border-slate-800">
+                        Pendente
+                      </span>
+                    )}
+                  </div>
+
+                  {partnerPokemon ? (
+                    <div className="space-y-3">
+                      {/* Sprite & Name */}
+                      <div className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
+                        <img src={partnerPokemon.sprites.front} alt={partnerPokemon.displayName} className="w-16 h-16 object-contain" />
+                        <div>
+                          <p className="text-sm font-black text-white flex items-center gap-1.5">
+                            {partnerPokemon.displayName}
+                            {partnerPokemon.isShiny && <span className="text-amber-400 text-xs">✨ Shiny</span>}
+                          </p>
+                          <p className="text-xs text-slate-400 font-mono">Nível {partnerPokemon.level}</p>
+                          <p className="text-[10px] text-slate-500">Habilidade: {partnerPokemon.ability}</p>
+                        </div>
+                      </div>
+
+                      {/* IVs / Stats */}
+                      <div className="grid grid-cols-3 gap-1.5 text-center font-mono text-[10px]">
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">HP</span>
+                          <span className="font-bold text-white">{partnerPokemon.maxHp}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">ATQ</span>
+                          <span className="font-bold text-white">{partnerPokemon.calculatedStats.atk}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">DEF</span>
+                          <span className="font-bold text-white">{partnerPokemon.calculatedStats.def}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">SP.ATQ</span>
+                          <span className="font-bold text-white">{partnerPokemon.calculatedStats.spAtk}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">SP.DEF</span>
+                          <span className="font-bold text-white">{partnerPokemon.calculatedStats.spDef}</span>
+                        </div>
+                        <div className="bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-500 block">SPD</span>
+                          <span className="font-bold text-white">{partnerPokemon.calculatedStats.spd}</span>
+                        </div>
+                      </div>
+
+                      {/* Item & Moves */}
+                      <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-[11px] space-y-1">
+                        <p className="text-slate-400">Item Equipado: <span className="font-bold text-white">{partnerPokemon.heldItem || 'Nenhum'}</span></p>
+                        <p className="text-slate-400">Golpes: <span className="font-bold text-indigo-300">{partnerPokemon.moves.map(m => getMove(m.moveId).name).join(', ')}</span></p>
+                      </div>
+                    </div>
                   ) : (
-                    <span className="text-xs font-bold text-slate-500">Aguardando Confirmação</span>
+                    <div className="py-12 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                      {partnerNickname ? 'O outro jogador está escolhendo um Pokémon...' : 'Aguardando jogador entrar na sala...'}
+                    </div>
                   )}
                 </div>
 
-                {partnerPokemon ? (
-                  <div className="flex items-center gap-4 bg-slate-900 p-3 rounded-2xl border border-slate-800">
-                    <img
-                      src={partnerPokemon.sprites.front}
-                      alt={partnerPokemon.displayName}
-                      className="w-16 h-16 object-contain"
-                    />
-                    <div>
-                      <p className="text-sm font-bold text-white flex items-center gap-2">
-                        {partnerPokemon.displayName}
-                        {partnerPokemon.isShiny && <span className="text-amber-400 text-xs">✨</span>}
-                      </p>
-                      <p className="text-xs text-slate-400 font-mono">Nível {partnerPokemon.level}</p>
-                      <p className="text-[10px] text-slate-500">Nature: {partnerPokemon.nature}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    {partnerNickname ? 'O outro jogador está escolhendo um Pokémon...' : 'Aguardando o segundo jogador entrar na sala...'}
-                  </div>
-                )}
+                <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-800 text-center text-[10px] text-slate-500 mt-4">
+                  Examine detalhadamente os atributos do Pokémon do oponente antes de confirmar.
+                </div>
               </div>
             </div>
 
             {/* Selection List */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Escolha o Pokémon que deseja oferecer:
+                Escolha 1 Pokémon da sua coleção para oferecer na troca:
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto pr-1">
-                {allAvailablePokemon.map((pkmn) => (
-                  <button
-                    key={pkmn.id}
-                    onClick={() => handleSelectPokemonForTrade(pkmn)}
-                    className={`p-2 rounded-xl border text-center flex flex-col items-center transition-all ${
-                      selectedMyPokemon?.id === pkmn.id
-                        ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                        : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
-                    }`}
-                  >
-                    <img src={pkmn.sprites.front} alt={pkmn.displayName} className="w-12 h-12 object-contain" />
-                    <span className="text-[10px] font-bold truncate w-full">{pkmn.displayName}</span>
-                    <span className="text-[9px] text-slate-400 font-mono">Nv.{pkmn.level}</span>
-                  </button>
-                ))}
+                {allAvailablePokemon.map((pkmn) => {
+                  const instId = pkmn.instanceId || (pkmn as any).id;
+                  const isSelected = (selectedMyPokemon?.instanceId || (selectedMyPokemon as any)?.id) === instId;
+                  return (
+                    <button
+                      key={instId}
+                      onClick={() => handleSelectPokemonForTrade(pkmn)}
+                      className={`p-2 rounded-xl border text-center flex flex-col items-center transition-all ${
+                        isSelected
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-2 ring-amber-500/30'
+                          : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <img src={pkmn.sprites.front} alt={pkmn.displayName} className="w-12 h-12 object-contain" />
+                      <span className="text-[10px] font-bold truncate w-full">{pkmn.displayName}</span>
+                      <span className="text-[9px] text-slate-400 font-mono">Nv.{pkmn.level}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
