@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Swords, Shield, Heart, Zap, RefreshCw, Trophy, Sparkles, X, ChevronRight, AlertCircle } from 'lucide-react';
 import { PokemonInstance } from '../types/pokemon';
-import { UserCloudData, db, syncUserToCloud, addSystemLog } from '../utils/firebase';
+import { UserCloudData, db, syncUserToCloud, addSystemLog, sanitizeData } from '../utils/firebase';
 import { doc, onSnapshot, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { soundEngine } from '../utils/soundEngine';
 import { getMove } from '../data/movesData';
@@ -389,6 +389,12 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
               Enfrente outros jogadores em duelos síncronos valendo ELO e Pokedólares!
             </p>
           </div>
+
+          {statusMessage && (
+            <div className="p-3 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-bold rounded-xl text-center animate-pulse">
+              {statusMessage}
+            </div>
+          )}
 
           {activeBattleId && battleData?.status === 'waiting' ? (
             <div className="p-6 bg-slate-950 rounded-2xl border border-indigo-500/40 text-center space-y-3">

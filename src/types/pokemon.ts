@@ -229,6 +229,7 @@ export interface Item {
 
 export interface UserSaveData {
   party: PokemonInstance[];
+  pcBox?: PokemonInstance[];
   pokedollars: number;
   inventory: Record<string, number>;
   activeIncense?: string | null;

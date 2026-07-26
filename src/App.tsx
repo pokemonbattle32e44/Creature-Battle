@@ -49,6 +49,7 @@ export default function App() {
   >('starter_select');
 
   const [playerTeam, setPlayerTeam] = useState<PokemonInstance[]>([]);
+  const [pcBox, setPcBox] = useState<PokemonInstance[]>([]);
   const [pokedollars, setPokedollars] = useState<number>(1000);
   const [userInventory, setUserInventory] = useState<Record<string, number>>({
     poke_ball: 5,
@@ -91,7 +92,14 @@ export default function App() {
 
         const profile = await getUserCloudData(user.uid);
         if (profile) {
-          setUserCloudProfile(profile);
+          const safeProfile = {
+            ...profile,
+            team: (profile.team || []).map(normalizePokemonInstance),
+            pcBox: (profile.pcBox || []).map(normalizePokemonInstance),
+          };
+          setUserCloudProfile(safeProfile);
+          if (safeProfile.team.length > 0) setPlayerTeam(safeProfile.team);
+          setPcBox(safeProfile.pcBox);
         } else {
           // Initialize user profile in Firestore
           const newProfile: UserCloudData = {
@@ -169,7 +177,8 @@ export default function App() {
       if (saved) {
         const parsed: UserSaveData = JSON.parse(saved);
         if (parsed.party && parsed.party.length > 0) {
-          setPlayerTeam(parsed.party);
+          setPlayerTeam(parsed.party.map(normalizePokemonInstance));
+          if (parsed.pcBox) setPcBox(parsed.pcBox.map(normalizePokemonInstance));
           setPokedollars(parsed.pokedollars || 1000);
           setUserInventory(parsed.inventory || { poke_ball: 5, potion: 3 });
           setActiveIncense(parsed.activeIncense || null);
@@ -219,6 +228,7 @@ export default function App() {
     const timestamp = new Date().toISOString();
     const saveData: UserSaveData = {
       party: playerTeam,
+      pcBox: pcBox,
       pokedollars,
       inventory: userInventory,
       activeIncense,
@@ -331,12 +341,16 @@ export default function App() {
     setBattlesWon(updatedBattlesWon);
 
     let updatedTeam = [...finalTeam];
+    let updatedBox = [...pcBox];
     let newSeen = [...pokedexSeen];
     let newCaught = [...pokedexCaught];
 
     if (caughtPokemon) {
       if (updatedTeam.length < 6) {
         updatedTeam.push(caughtPokemon);
+      } else {
+        updatedBox.push(caughtPokemon);
+        setPcBox(updatedBox);
       }
       setPokemonCaught(updatedCaughtCount);
       if (!newSeen.includes(caughtPokemon.pokedexId)) newSeen.push(caughtPokemon.pokedexId);
@@ -346,6 +360,21 @@ export default function App() {
     }
 
     setPlayerTeam(updatedTeam);
+
+    if (userCloudProfile) {
+      const updatedProfile: UserCloudData = {
+        ...userCloudProfile,
+        money: updatedPokedollars,
+        team: updatedTeam,
+        pcBox: updatedBox,
+        wins: updatedBattlesWon,
+        pokedexCount: newCaught.length,
+        pokedexCaught: newCaught,
+        pokedexSeen: newSeen,
+      };
+      setUserCloudProfile(updatedProfile);
+      syncUserToCloud(updatedProfile);
+    }
 
     // Check for evolution in team
     const evolvableIndex = updatedTeam.findIndex(
@@ -412,6 +441,27 @@ export default function App() {
   // Navigation router
   const leadPokemon = playerTeam[0];
 
+  const effectiveCloudProfile: UserCloudData = userCloudProfile || {
+    uid: currentUser?.uid || 'guest_' + (currentUser?.uid || 'local_player'),
+    email: currentUser?.email || 'guest@arena.local',
+    nickname: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Treinador',
+    avatar: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png',
+    money: pokedollars,
+    isAdmin: isAdmin,
+    elo: 1000,
+    wins: battlesWon,
+    losses: 0,
+    winStreak: 0,
+    team: playerTeam,
+    pcBox: pcBox,
+    inventory: userInventory,
+    pokedexCaught: pokedexCaught,
+    pokedexSeen: pokedexSeen,
+    pokedexCount: pokedexCaught.length,
+    createdAt: new Date().toISOString(),
+    lastLogin: new Date().toISOString(),
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
       
@@ -461,25 +511,27 @@ export default function App() {
       )}
 
       {/* PvP Multiplayer Battle View */}
-      {currentView === 'pvp' && userCloudProfile && (
+      {currentView === 'pvp' && (
         <MultiplayerPvPView
-          userCloudProfile={userCloudProfile}
+          userCloudProfile={effectiveCloudProfile}
           onUpdateProfile={(updated) => {
             setUserCloudProfile(updated);
             setPokedollars(updated.money);
             setPlayerTeam(updated.team);
+            if (updated.pcBox) setPcBox(updated.pcBox);
           }}
           onBack={() => setCurrentView('main')}
         />
       )}
 
       {/* Trade View */}
-      {currentView === 'trade' && userCloudProfile && (
+      {currentView === 'trade' && (
         <TradeView
-          userCloudProfile={userCloudProfile}
+          userCloudProfile={effectiveCloudProfile}
           onUpdateProfile={(updated) => {
             setUserCloudProfile(updated);
             setPlayerTeam(updated.team);
+            if (updated.pcBox) setPcBox(updated.pcBox);
           }}
           onBack={() => setCurrentView('main')}
         />
@@ -532,9 +584,10 @@ export default function App() {
       {currentView === 'team' && (
         <TeamView
           playerTeam={playerTeam}
-          pcBox={userCloudProfile?.pcBox || []}
+          pcBox={pcBox}
           onUpdateTeamAndBox={(newTeam, newBox) => {
             setPlayerTeam(newTeam);
+            setPcBox(newBox);
             if (userCloudProfile) {
               const updated = { ...userCloudProfile, team: newTeam, pcBox: newBox };
               setUserCloudProfile(updated);
