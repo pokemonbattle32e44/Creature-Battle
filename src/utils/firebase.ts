@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import {
   initializeFirestore,
+  setLogLevel,
   doc,
   setDoc,
   getDoc,
@@ -49,6 +50,7 @@ export const db = initializeFirestore(
   { ignoreUndefinedProperties: true },
   firebaseConfigJson.firestoreDatabaseId || '(default)'
 );
+setLogLevel('error');
 
 export function sanitizeData<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
@@ -161,6 +163,8 @@ export function subscribeFriendRequests(uid: string, callback: (reqs: any[]) => 
     const reqs: any[] = [];
     snap.forEach((d) => reqs.push({ id: d.id, ...d.data() }));
     callback(reqs);
+  }, (err) => {
+    console.warn('Friend requests snapshot error:', err);
   });
 }
 
@@ -192,7 +196,7 @@ export function subscribeFriendsList(uid: string, callback: (friendUids: string[
       friendUids.add(data.userB);
     });
     callback(Array.from(friendUids));
-  });
+  }, (err) => console.warn('Friends list snapshot error 1:', err));
 
   const unsub2 = onSnapshot(q2, (snap) => {
     snap.forEach((d) => {
@@ -200,7 +204,7 @@ export function subscribeFriendsList(uid: string, callback: (friendUids: string[
       friendUids.add(data.userA);
     });
     callback(Array.from(friendUids));
-  });
+  }, (err) => console.warn('Friends list snapshot error 2:', err));
 
   return () => {
     unsub1();
@@ -241,7 +245,7 @@ export function subscribeIncomingGifts(uid: string, callback: (gifts: GiftData[]
     const list: GiftData[] = [];
     snap.forEach((d) => list.push({ id: d.id, ...(d.data() as GiftData) }));
     callback(list);
-  });
+  }, (err) => console.warn('Incoming gifts snapshot error:', err));
 }
 
 export async function acceptGift(gift: GiftData, recipientProfile: UserCloudData): Promise<UserCloudData> {

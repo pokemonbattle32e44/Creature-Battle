@@ -25,21 +25,24 @@ export function getPokemonSpriteStyle(pkmn?: { pokedexId?: number; id?: number; 
 // High quality sprite builder helpers using official PokeAPI / Showdown CDN
 export function getSpriteUrls(id: number, name: string, isShiny: boolean = false) {
   if (id === 0 || name === 'missingno') {
+    const missingnoFront = 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/e/e0/MissingNo.1.png/revision/latest?cb=20200404195127';
     return {
-      front: MISSINGNO_SPRITE,
-      back: MISSINGNO_SPRITE,
-      animatedFront: MISSINGNO_SPRITE,
-      animatedBack: MISSINGNO_SPRITE,
-      artwork: MISSINGNO_SPRITE,
+      front: missingnoFront,
+      back: missingnoFront,
+      animatedFront: missingnoFront,
+      animatedBack: missingnoFront,
+      artwork: missingnoFront,
     };
   }
   if (id === 666 || name === 'ghost') {
+    const ghostFront = 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/a/a2/MissingNo.2.png/revision/latest?cb=20200404195138';
+    const ghostBack = 'https://i.postimg.cc/jd9YLgYq/Gemini-Generated-Image-9rp98q9rp98q9rp9-removebg-preview.png';
     return {
-      front: GHOST_SPRITE,
-      back: GHOST_SPRITE,
-      animatedFront: GHOST_SPRITE,
-      animatedBack: GHOST_SPRITE,
-      artwork: GHOST_SPRITE,
+      front: ghostFront,
+      back: ghostBack,
+      animatedFront: ghostFront,
+      animatedBack: ghostBack,
+      artwork: ghostFront,
     };
   }
   const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, '');

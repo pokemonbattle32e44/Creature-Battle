@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Swords, Shield, Heart, Zap, RefreshCw, Trophy, Sparkles, X, ChevronRight, AlertCircle } from 'lucide-react';
 import { PokemonInstance } from '../types/pokemon';
 import { UserCloudData, db, syncUserToCloud, addSystemLog, sanitizeData } from '../utils/firebase';
@@ -50,6 +50,79 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
   const [menuMode, setMenuMode] = useState<'main' | 'moves' | 'pokemon'>('main');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isProcessingTurn, setIsProcessingTurn] = useState(false);
+  const [attackerLunge, setAttackerLunge] = useState<'player' | 'opponent' | null>(null);
+  const [floatingText, setFloatingText] = useState<{ text: string; target: 'player' | 'opponent'; color: string } | null>(null);
+
+  const prevMyPkmnKeyRef = useRef<string>('');
+  const prevOpponentPkmnKeyRef = useRef<string>('');
+  const prevLogsLengthRef = useRef<number>(0);
+
+  // Trigger Pokemon Entrance Cries & Ball Throw SFX
+  useEffect(() => {
+    if (battleData?.status === 'in_progress') {
+      const isHost = battleData.hostUid === userCloudProfile.uid;
+      const myTeam = isHost ? battleData.hostTeam : battleData.guestTeam;
+      const myActiveIdx = isHost ? battleData.hostActiveIndex : battleData.guestActiveIndex;
+      const myActive = myTeam?.[myActiveIdx];
+
+      const oppTeam = isHost ? battleData.guestTeam : battleData.hostTeam;
+      const oppActiveIdx = isHost ? battleData.guestActiveIndex : battleData.hostActiveIndex;
+      const oppActive = oppTeam?.[oppActiveIdx];
+
+      if (myActive) {
+        const myKey = `${myActive.pokedexId}_${myActive.displayName}_${myActiveIdx}`;
+        if (myKey !== prevMyPkmnKeyRef.current) {
+          prevMyPkmnKeyRef.current = myKey;
+          soundEngine.playBallThrow();
+          setTimeout(() => {
+            if (myActive.pokedexId !== undefined) {
+              soundEngine.playCry(myActive.pokedexId);
+            }
+          }, 150);
+        }
+      }
+
+      if (oppActive) {
+        const oppKey = `${oppActive.pokedexId}_${oppActive.displayName}_${oppActiveIdx}`;
+        if (oppKey !== prevOpponentPkmnKeyRef.current) {
+          prevOpponentPkmnKeyRef.current = oppKey;
+          soundEngine.playBallThrow();
+          setTimeout(() => {
+            if (oppActive.pokedexId !== undefined) {
+              soundEngine.playCry(oppActive.pokedexId);
+            }
+          }, 250);
+        }
+      }
+    }
+  }, [battleData?.status, battleData?.hostActiveIndex, battleData?.guestActiveIndex, battleData?.hostTeam, battleData?.guestTeam, userCloudProfile.uid]);
+
+  // Trigger Hit SFX and Attack Lunge animations when new logs arrive
+  useEffect(() => {
+    if (battleData?.logs && battleData.logs.length > prevLogsLengthRef.current) {
+      const newLogs = battleData.logs.slice(prevLogsLengthRef.current);
+      prevLogsLengthRef.current = battleData.logs.length;
+
+      const latest = newLogs[newLogs.length - 1];
+      if (latest) {
+        if (latest.includes('usou') || latest.includes('causou') || latest.includes('dano')) {
+          soundEngine.playHit('physical');
+
+          const isHost = battleData.hostUid === userCloudProfile.uid;
+          const myNickname = userCloudProfile.nickname || '';
+          const oppNickname = isHost ? battleData.guestNickname : battleData.hostNickname;
+
+          if (latest.includes(`[${myNickname}]`)) {
+            setAttackerLunge('player');
+            setTimeout(() => setAttackerLunge(null), 400);
+          } else if (latest.includes(`[${oppNickname}]`)) {
+            setAttackerLunge('opponent');
+            setTimeout(() => setAttackerLunge(null), 400);
+          }
+        }
+      }
+    }
+  }, [battleData?.logs, battleData?.hostUid, battleData?.guestNickname, battleData?.hostNickname, userCloudProfile.nickname, userCloudProfile.uid]);
 
   // Subscribe to real-time battle doc
   useEffect(() => {
@@ -79,6 +152,8 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
         await resolveTurn(battleRef, data);
         setIsProcessingTurn(false);
       }
+    }, (err) => {
+      console.warn('PvP battle snapshot error:', err);
     });
 
     return () => unsub();
@@ -455,12 +530,18 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
               <div className="bg-slate-900/90 backdrop-blur border border-slate-800 p-3 rounded-2xl shadow-xl min-w-[200px]">
                 <div className="flex justify-between items-center mb-1">
                   <span className="font-bold text-xs text-white capitalize">{opponentActivePkmn?.displayName || 'Oponente'}</span>
-                  <span className="text-[10px] font-mono text-slate-400">Nv. {opponentActivePkmn?.level}</span>
+                  <span className="text-[10px] font-mono text-emerald-400 font-bold">Nv. {opponentActivePkmn?.level}</span>
                 </div>
                 {/* HP Bar */}
                 <div className="w-full bg-slate-950 rounded-full h-2.5 p-0.5 border border-slate-800 mb-1">
                   <div
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      ((opponentActivePkmn?.currentHp || 0) / (opponentActivePkmn?.maxHp || 1)) > 0.5
+                        ? 'bg-emerald-500'
+                        : ((opponentActivePkmn?.currentHp || 0) / (opponentActivePkmn?.maxHp || 1)) > 0.2
+                        ? 'bg-amber-500'
+                        : 'bg-red-500'
+                    }`}
                     style={{
                       width: `${Math.max(0, Math.min(100, ((opponentActivePkmn?.currentHp || 0) / (opponentActivePkmn?.maxHp || 1)) * 100))}%`,
                     }}
@@ -472,14 +553,25 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
                 </div>
               </div>
 
-              {/* Opponent Sprite */}
+              {/* Opponent Sprite Stage */}
               {opponentActivePkmn && (
-                <div className="relative pr-8 pt-2">
+                <div
+                  key={`opp_${opponentActivePkmn.pokedexId}_${opponentActiveIdx}`}
+                  className="relative flex justify-center items-center w-36 h-36 pr-4 pt-2"
+                >
+                  <div className="absolute bottom-2 w-28 h-8 bg-black/40 rounded-full blur-md"></div>
                   <img
                     src={opponentActivePkmn.sprites?.front || ''}
                     alt={opponentActivePkmn.displayName}
+                    referrerPolicy="no-referrer"
                     style={getPokemonSpriteStyle(opponentActivePkmn)}
-                    className="w-28 h-28 object-contain filter drop-shadow-2xl animate-bounce-subtle"
+                    className={`w-32 h-32 object-contain relative z-10 transition-all duration-300 animate-intro-enemy ${
+                      attackerLunge === 'opponent' ? 'animate-lunge-enemy' : ''
+                    } ${
+                      opponentActivePkmn.pokedexId === 0 || opponentActivePkmn.name.toLowerCase() === 'missingno' ? 'missingno-pixel-glitch' : ''
+                    } ${
+                      opponentActivePkmn.pokedexId === 666 || opponentActivePkmn.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
+                    }`}
                   />
                 </div>
               )}
@@ -487,14 +579,25 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
 
             {/* Bottom Stage: Player HUD & Sprite */}
             <div className="flex justify-between items-end">
-              {/* Player Active Sprite */}
+              {/* Player Active Sprite Stage */}
               {myActivePkmn && (
-                <div className="relative pl-8 pb-2">
+                <div
+                  key={`my_${myActivePkmn.pokedexId}_${myActiveIdx}`}
+                  className="relative flex justify-center items-center w-36 h-36 pl-4 pb-2"
+                >
+                  <div className="absolute bottom-2 w-28 h-8 bg-black/40 rounded-full blur-md"></div>
                   <img
                     src={myActivePkmn.sprites?.back || myActivePkmn.sprites?.front || ''}
                     alt={myActivePkmn.displayName}
+                    referrerPolicy="no-referrer"
                     style={getPokemonSpriteStyle(myActivePkmn)}
-                    className="w-32 h-32 object-contain filter drop-shadow-2xl scale-110"
+                    className={`w-36 h-36 object-contain relative z-10 transition-all duration-300 animate-intro-player scale-110 ${
+                      attackerLunge === 'player' ? 'animate-lunge-player' : ''
+                    } ${
+                      myActivePkmn.pokedexId === 0 || myActivePkmn.name.toLowerCase() === 'missingno' ? 'missingno-pixel-glitch' : ''
+                    } ${
+                      myActivePkmn.pokedexId === 666 || myActivePkmn.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
+                    }`}
                   />
                 </div>
               )}
@@ -503,12 +606,18 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
               <div className="bg-slate-900/90 backdrop-blur border border-slate-800 p-3 rounded-2xl shadow-xl min-w-[220px]">
                 <div className="flex justify-between items-center mb-1">
                   <span className="font-bold text-xs text-white capitalize">{myActivePkmn?.displayName}</span>
-                  <span className="text-[10px] font-mono text-slate-400">Nv. {myActivePkmn?.level}</span>
+                  <span className="text-[10px] font-mono text-emerald-400 font-bold">Nv. {myActivePkmn?.level}</span>
                 </div>
                 {/* HP Bar */}
                 <div className="w-full bg-slate-950 rounded-full h-2.5 p-0.5 border border-slate-800 mb-1">
                   <div
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      ((myActivePkmn?.currentHp || 0) / (myActivePkmn?.maxHp || 1)) > 0.5
+                        ? 'bg-emerald-500'
+                        : ((myActivePkmn?.currentHp || 0) / (myActivePkmn?.maxHp || 1)) > 0.2
+                        ? 'bg-amber-500'
+                        : 'bg-red-500'
+                    }`}
                     style={{
                       width: `${Math.max(0, Math.min(100, ((myActivePkmn?.currentHp || 0) / (myActivePkmn?.maxHp || 1)) * 100))}%`,
                     }}

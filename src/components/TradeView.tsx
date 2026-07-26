@@ -54,6 +54,8 @@ export const TradeView: React.FC<TradeViewProps> = ({
       } else {
         if (countdown !== null) setCountdown(null);
       }
+    }, (err) => {
+      console.warn('Trade snapshot error:', err);
     });
 
     return () => unsub();
