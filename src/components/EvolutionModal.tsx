@@ -21,11 +21,20 @@ export const EvolutionModal: React.FC<EvolutionModalProps> = ({
   const [stage, setStage] = useState<'intro' | 'glowing' | 'done'>('intro');
 
   useEffect(() => {
-    if (pokemon.evolution?.targetId) {
-      fetchPokemonData(pokemon.evolution.targetId).then((data) => {
+    async function loadEvolutionTarget() {
+      let targetId = pokemon.evolution?.targetId;
+      if (!targetId) {
+        const base = await fetchPokemonData(pokemon.pokedexId);
+        if (base?.evolution?.targetId) {
+          targetId = base.evolution.targetId;
+        }
+      }
+      if (targetId) {
+        const data = await fetchPokemonData(targetId);
         if (data) setTargetBaseData(data);
-      });
+      }
     }
+    loadEvolutionTarget();
   }, [pokemon]);
 
   const handleStartEvolution = () => {
@@ -43,8 +52,8 @@ export const EvolutionModal: React.FC<EvolutionModalProps> = ({
 
   const handleFinish = () => {
     if (targetBaseData) {
-      const evolved = createPokemonInstance(targetBaseData, pokemon.level);
-      // Retain moves and HP percentage
+      const evolved = createPokemonInstance(targetBaseData, pokemon.level, pokemon.isShiny);
+      evolved.heldItem = pokemon.heldItem;
       evolved.moves = [...pokemon.moves];
       evolved.exp = pokemon.exp;
       evolved.expToNext = pokemon.expToNext;

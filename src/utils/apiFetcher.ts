@@ -172,6 +172,43 @@ export async function fetchPokemonData(nameOrId: string | number): Promise<Pokem
     const evolvesFrom = speciesData ? speciesData.evolves_from_species : null;
     const isStage1Basic = !evolvesFrom;
 
+    // Determine evolution target from local DB or PokeAPI species evolution chain
+    let evolutionData = STARTERS_AND_POKEMON_DATABASE[id]?.evolution;
+    if (!evolutionData && speciesData?.evolution_chain?.url) {
+      try {
+        const evoRes = await fetch(speciesData.evolution_chain.url);
+        if (evoRes.ok) {
+          const evoChain = await evoRes.json();
+          let curr = evoChain.chain;
+          while (curr) {
+            const speciesUrl = curr.species.url || '';
+            const matches = speciesUrl.match(/\/pokemon-species\/(\d+)\//);
+            const nodeSpeciesId = matches ? parseInt(matches[1], 10) : 0;
+
+            if (nodeSpeciesId === id || curr.species.name.toLowerCase() === name.toLowerCase()) {
+              if (curr.evolves_to && curr.evolves_to.length > 0) {
+                const nextEvo = curr.evolves_to[0];
+                const nextUrl = nextEvo.species.url || '';
+                const nextMatches = nextUrl.match(/\/pokemon-species\/(\d+)\//);
+                const targetId = nextMatches ? parseInt(nextMatches[1], 10) : id + 1;
+                const targetName = nextEvo.species.name;
+                const minLevel = nextEvo.evolution_details?.[0]?.min_level || 16;
+                evolutionData = { minLevel, targetId, targetName };
+              }
+              break;
+            }
+            if (curr.evolves_to && curr.evolves_to.length > 0) {
+              curr = curr.evolves_to[0];
+            } else {
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch evolution chain for ${name}:`, e);
+      }
+    }
+
     // Check level-up moves
     const levelUpMoves: Array<{ level: number; moveId: string }> = [];
     data.moves.forEach((m: any) => {
@@ -213,6 +250,7 @@ export async function fetchPokemonData(nameOrId: string | number): Promise<Pokem
       levelUpMoves,
       baseExp: data.base_experience || 64,
       catchRate: speciesData ? speciesData.capture_rate || 45 : 45,
+      evolution: evolutionData,
     };
 
     // Update national pokedex index entry in memory

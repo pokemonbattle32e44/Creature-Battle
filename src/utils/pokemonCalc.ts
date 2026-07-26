@@ -204,7 +204,7 @@ export function createPokemonInstance(
 export function normalizePokemonInstance(pkmn: any): PokemonInstance {
   if (!pkmn || typeof pkmn !== 'object') return pkmn;
   const id = pkmn.pokedexId ?? pkmn.id ?? 1;
-  const baseData = STARTERS_AND_POKEMON_DATABASE[id] || STARTERS_AND_POKEMON_DATABASE[1];
+  const baseData = STARTERS_AND_POKEMON_DATABASE[id] || null;
   const isSpecial = id === 0 || id === 666 || pkmn.name === 'missingno' || pkmn.name === 'ghost';
 
   let sprites = pkmn.sprites;
@@ -222,7 +222,7 @@ export function normalizePokemonInstance(pkmn: any): PokemonInstance {
     instanceId: pkmn.instanceId || Math.random().toString(36).substring(2, 9),
     pokedexId: id,
     name: pkmn.name || baseData?.name || 'pokemon',
-    displayName: pkmn.displayName || baseData?.displayName || 'Pokémon',
+    displayName: pkmn.displayName || baseData?.displayName || (pkmn.name ? pkmn.name.charAt(0).toUpperCase() + pkmn.name.slice(1) : `Pokémon #${id}`),
     level: pkmn.level || 1,
     currentHp: typeof pkmn.currentHp === 'number' ? pkmn.currentHp : maxHp,
     maxHp: maxHp,

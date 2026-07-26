@@ -195,7 +195,7 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
 
     const hostPkmn = hostTeam[hostActiveIdx];
     const guestPkmn = guestTeam[guestActiveIdx];
-    const logs = [...data.logs];
+    const logs = [...(data.logs || [])];
 
     const hostAct = data.hostAction!;
     const guestAct = data.guestAction!;
@@ -377,7 +377,7 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
         </div>
       </div>
 
-      {!activeBattleId || battleData?.status === 'waiting' ? (
+      {!activeBattleId || !battleData || battleData.status === 'waiting' ? (
         /* Lobby */
         <div className="max-w-2xl mx-auto my-auto w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
           <div className="text-center space-y-2">
@@ -396,9 +396,11 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
             </div>
           )}
 
-          {activeBattleId && battleData?.status === 'waiting' ? (
+          {activeBattleId && (!battleData || battleData.status === 'waiting') ? (
             <div className="p-6 bg-slate-950 rounded-2xl border border-indigo-500/40 text-center space-y-3">
-              <p className="text-xs font-bold text-indigo-300 uppercase">Aguardando oponente entrar na sala</p>
+              <p className="text-xs font-bold text-indigo-300 uppercase">
+                {!battleData ? 'Conectando à sala...' : 'Aguardando oponente entrar na sala'}
+              </p>
               <h3 className="text-3xl font-black text-amber-400 font-mono">#{activeBattleId}</h3>
               <p className="text-[11px] text-slate-400">Passe este código para o seu amigo para dar início à partida.</p>
               <button
@@ -527,7 +529,7 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
             <div className="md:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-4 h-48 flex flex-col justify-between">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Relatório do Duelo</span>
               <div className="overflow-y-auto space-y-1 text-xs font-mono text-slate-300 pr-1 flex-1">
-                {battleData.logs.map((log, i) => (
+                {(battleData?.logs || []).map((log, i) => (
                   <p key={i} className="leading-tight text-[11px] border-b border-slate-800/40 pb-1">{log}</p>
                 ))}
               </div>
@@ -535,11 +537,11 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
 
             {/* Battle Controls (5 cols) */}
             <div className="md:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
-              {battleData.status === 'finished' ? (
+              {battleData?.status === 'finished' ? (
                 <div className="text-center space-y-3 my-auto">
                   <h3 className="text-xl font-black text-amber-400">Batalha Finalizada!</h3>
                   <p className="text-xs text-slate-300">
-                    {battleData.winnerUid === userCloudProfile.uid ? '🎉 Você Venceu! (+25 ELO / +$2.500)' : ' Derrota... (-15 ELO)'}
+                    {battleData?.winnerUid === userCloudProfile.uid ? '🎉 Você Venceu! (+25 ELO / +$2.500)' : ' Derrota... (-15 ELO)'}
                   </p>
                   <button
                     onClick={handleForfeit}
