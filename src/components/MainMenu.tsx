@@ -20,12 +20,17 @@ import {
   Crown,
   UserCheck,
   Gift,
+  Gem,
+  Compass,
+  RefreshCw,
+  Calendar,
 } from 'lucide-react';
-import { PokemonInstance } from '../types/pokemon';
+import { PokemonInstance, BiomeType, GameEvent } from '../types/pokemon';
 import { ITEMS_DATABASE } from '../data/itemsData';
 import { TYPE_COLORS, TYPE_NAMES_PT } from '../data/typeChart';
 import { soundEngine } from '../utils/soundEngine';
 import { RarityBadge } from './RarityBadge';
+import { getBiomeConfig, BIOMES, BIOME_ROTATION_ORDER, getNextBiome } from '../data/environments';
 
 interface MainMenuProps {
   leadPokemon: PokemonInstance;
@@ -35,6 +40,13 @@ interface MainMenuProps {
   currentUser?: any;
   userCloudProfile?: any;
   isAdmin?: boolean;
+  currentBiome?: BiomeType;
+  battleCountInBiome?: number;
+  battlesPerRotation?: number;
+  teraOrbCharged?: boolean;
+  eventsList?: GameEvent[];
+  onRechargeTeraOrb?: () => void;
+  onChangeBiome?: (biome: BiomeType) => void;
   onToggleSound: () => void;
   onNavigate: (
     view: 'grass' | 'shop' | 'bag' | 'team' | 'save' | 'pokedex' | 'pvp' | 'trade'
@@ -55,6 +67,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   currentUser,
   userCloudProfile,
   isAdmin = false,
+  currentBiome = 'forest',
+  battleCountInBiome = 0,
+  battlesPerRotation = 5,
+  teraOrbCharged = true,
+  eventsList = [],
+  onRechargeTeraOrb,
+  onChangeBiome,
   onToggleSound,
   onNavigate,
   onOpenAuth,
@@ -73,6 +92,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     if (hpPercent > 20) return 'bg-amber-500';
     return 'bg-red-500';
   };
+
+  const biomeConfig = getBiomeConfig(currentBiome);
+  const currentActiveEvents = eventsList.filter((e) => e.active);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 relative overflow-hidden select-none">
@@ -267,7 +289,131 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
       </main>
 
-      {/* Active Incense Banner */}
+      {/* Rotating Biome & Tera Orb Status Widget */}
+      <div className="w-full max-w-xl mx-auto mb-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2.5 z-10">
+        {/* Biome Status */}
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex items-center justify-between backdrop-blur-md shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border"
+              style={{
+                backgroundColor: `${biomeConfig.themeColor}20`,
+                borderColor: `${biomeConfig.themeColor}40`,
+                color: biomeConfig.themeColor,
+              }}
+            >
+              <Compass className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Ambiente de Combate</div>
+              <div className="text-xs font-black truncate max-w-[140px]" style={{ color: biomeConfig.themeColor }}>
+                {biomeConfig.name}
+              </div>
+              <div className="text-[10px] text-slate-400">
+                Gira em <strong className="text-emerald-400 font-mono">{Math.max(1, battlesPerRotation - battleCountInBiome)}</strong> batalhas
+              </div>
+            </div>
+          </div>
+          {onChangeBiome && (
+            <button
+              onClick={() => {
+                soundEngine.playClick();
+                onChangeBiome(getNextBiome(currentBiome));
+              }}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-all text-[10px] font-bold flex items-center gap-1 shrink-0 active:scale-95"
+              title="Girar para o próximo bioma"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Girar</span>
+            </button>
+          )}
+        </div>
+
+        {/* Tera Orb Station */}
+        <div
+          className={`border rounded-2xl p-3 flex items-center justify-between backdrop-blur-md shadow-lg ${
+            teraOrbCharged
+              ? 'bg-slate-900/90 border-cyan-500/40 text-cyan-300'
+              : 'bg-slate-900/90 border-amber-500/40 text-amber-300'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                teraOrbCharged
+                  ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300 shadow-md shadow-cyan-500/20'
+                  : 'bg-amber-500/20 border-amber-400/50 text-amber-400'
+              }`}
+            >
+              <Gem className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Orbe Tera (Treinador)</div>
+              <div className="text-xs font-black flex items-center gap-1.5">
+                <span>{teraOrbCharged ? '💎 CARREGADO' : '⚠️ DESCARREGADO'}</span>
+              </div>
+              <div className="text-[10px] text-slate-400">
+                {teraOrbCharged ? 'Pronto para Terastalizar' : 'Recarregue na Estação'}
+              </div>
+            </div>
+          </div>
+          {!teraOrbCharged && onRechargeTeraOrb && (
+            <button
+              onClick={() => {
+                soundEngine.playCatchSuccess();
+                onRechargeTeraOrb();
+              }}
+              className="px-2.5 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider shadow-md shadow-cyan-950/50 transition-all active:scale-95 shrink-0 flex items-center gap-1"
+            >
+              <Zap className="w-3 h-3" />
+              <span>Recarregar</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Active Events Notification Banner */}
+      {currentActiveEvents.length > 0 && (
+        <div className="w-full max-w-xl mx-auto mb-2.5 bg-gradient-to-r from-purple-950/90 via-slate-900/95 to-indigo-950/90 border border-purple-500/50 rounded-2xl p-3 px-4 z-10 shadow-xl shadow-purple-950/40">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2 text-purple-300 font-extrabold text-xs">
+              <Calendar className="w-4 h-4 text-purple-400 animate-pulse" />
+              <span>EVENTO ATIVO NA ARENA</span>
+            </div>
+            <span className="text-[9px] uppercase px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-400/30 font-bold">
+              AO VIVO
+            </span>
+          </div>
+          {currentActiveEvents.map((ev) => (
+            <div key={ev.id} className="mt-1">
+              <div className="text-xs font-black text-white">{ev.name}</div>
+              <p className="text-[10px] text-slate-300 line-clamp-1">{ev.description}</p>
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[10px] font-bold">
+                {ev.shinyMultiplier > 1 && (
+                  <span className="bg-amber-950/80 text-amber-300 px-2 py-0.5 rounded-lg border border-amber-600/40">
+                    ✨ Shiny {ev.shinyMultiplier}x
+                  </span>
+                )}
+                {ev.expMultiplier > 1 && (
+                  <span className="bg-teal-950/80 text-teal-300 px-2 py-0.5 rounded-lg border border-teal-600/40">
+                    ⚡ Exp {ev.expMultiplier}x
+                  </span>
+                )}
+                {ev.moneyMultiplier > 1 && (
+                  <span className="bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded-lg border border-emerald-600/40">
+                    💰 Moedas {ev.moneyMultiplier}x
+                  </span>
+                )}
+                {ev.spawnBoosts && Object.keys(ev.spawnBoosts).length > 0 && (
+                  <span className="bg-pink-950/80 text-pink-300 px-2 py-0.5 rounded-lg border border-pink-600/40">
+                    🎯 Espécie Boost (+{Object.values(ev.spawnBoosts)[0]}%)
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {activeIncenseItem && (
         <div className="w-full max-w-xl mx-auto mb-3 bg-emerald-950/80 border border-emerald-500/50 rounded-2xl p-2.5 px-4 flex items-center justify-between text-xs z-10 animate-pulse shadow-lg">
           <div className="flex items-center gap-2 text-emerald-300 font-bold">

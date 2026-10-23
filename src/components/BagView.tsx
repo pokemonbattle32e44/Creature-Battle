@@ -137,6 +137,43 @@ export const BagView: React.FC<BagViewProps> = ({
       }
     }
 
+    // Handle Mega Stone Equip
+    if (item.category === 'mega_stone') {
+      if (item.megaStoneForSpeciesId && target.pokedexId !== item.megaStoneForSpeciesId) {
+        soundEngine.playHit('notVery');
+        showToast(`⚠️ Esta Mega Stone é incompatível com ${target.displayName}!`);
+        return;
+      }
+      const prevHeld = target.heldItem;
+      const newInv = { ...userInventory, [item.id]: (userInventory[item.id] || 1) - 1 };
+      if (prevHeld) {
+        newInv[prevHeld] = (newInv[prevHeld] || 0) + 1;
+      }
+      target.heldItem = item.id;
+      updatedTeam[pkmnIndex] = target;
+      onUpdateTeam(updatedTeam);
+      onUpdateInventory(newInv);
+      soundEngine.playLevelUp();
+      showToast(`⚡ ${target.displayName} agora está segurando ${item.name}! Pronto para Mega Evoluir em combate!`);
+      return;
+    }
+
+    // Handle Competitive Battle Held Items (Leftovers, Life Orb, Focus Sash, Choice Band/Specs/Scarf)
+    if (item.category === 'battle') {
+      const prevHeld = target.heldItem;
+      const newInv = { ...userInventory, [item.id]: (userInventory[item.id] || 1) - 1 };
+      if (prevHeld) {
+        newInv[prevHeld] = (newInv[prevHeld] || 0) + 1;
+      }
+      target.heldItem = item.id;
+      updatedTeam[pkmnIndex] = target;
+      onUpdateTeam(updatedTeam);
+      onUpdateInventory(newInv);
+      soundEngine.playCatchSuccess();
+      showToast(`🛡️ ${target.displayName} agora está segurando ${item.name}!`);
+      return;
+    }
+
     // Update state
     updatedTeam[pkmnIndex] = target;
     onUpdateTeam(updatedTeam);
@@ -298,34 +335,71 @@ export const BagView: React.FC<BagViewProps> = ({
 
               {/* Party Member List */}
               <div className="space-y-2">
-                {playerTeam.map((pkmn, idx) => (
-                  <button
-                    key={pkmn.instanceId}
-                    onClick={() => {
-                      if (selectedItem) {
-                        handleUseItemOnPokemon(selectedItem, idx);
-                      }
-                    }}
-                    disabled={!selectedItem}
-                    className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 p-2.5 rounded-xl flex items-center justify-between transition-all disabled:opacity-50 group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <img src={pkmn.sprites.front} alt={pkmn.displayName} className="w-10 h-10 object-contain" />
-                      <div className="text-left">
-                        <div className="font-bold text-xs text-white capitalize">
-                          {pkmn.isShiny ? `✨ ${pkmn.displayName}` : pkmn.displayName}
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          Nv. {pkmn.level} • {pkmn.currentHp}/{pkmn.maxHp} HP
+                {playerTeam.map((pkmn, idx) => {
+                  const heldItemData = pkmn.heldItem ? ITEMS_DATABASE[pkmn.heldItem] : null;
+                  return (
+                    <div
+                      key={`${pkmn.instanceId || 'pkmn'}_${idx}`}
+                      className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img src={pkmn.sprites.front} alt={pkmn.displayName} referrerPolicy="no-referrer" className="w-10 h-10 object-contain" />
+                        <div className="text-left">
+                          <div className="font-bold text-xs text-white capitalize flex items-center gap-1.5">
+                            <span>{pkmn.isShiny ? `✨ ${pkmn.displayName}` : pkmn.displayName}</span>
+                            {heldItemData && (
+                              <span className="text-[9px] bg-amber-950/80 text-amber-300 border border-amber-600/50 px-1.5 py-0.2 rounded font-semibold flex items-center gap-1">
+                                🛡️ {heldItemData.name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            Nv. {pkmn.level} • {pkmn.currentHp}/{pkmn.maxHp} HP
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <span className="text-xs font-bold text-teal-400 group-hover:translate-x-1 transition-transform">
-                      Usar
-                    </span>
-                  </button>
-                ))}
+                      <div className="flex items-center gap-1.5">
+                        {heldItemData && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updatedTeam = [...playerTeam];
+                              const target = { ...updatedTeam[idx] };
+                              const oldHeld = target.heldItem;
+                              if (oldHeld) {
+                                target.heldItem = undefined;
+                                updatedTeam[idx] = target;
+                                const newInv = { ...userInventory, [oldHeld]: (userInventory[oldHeld] || 0) + 1 };
+                                onUpdateTeam(updatedTeam);
+                                onUpdateInventory(newInv);
+                                soundEngine.playClick();
+                                showToast(`Desequipou ${heldItemData.name} de ${target.displayName}.`);
+                              }
+                            }}
+                            className="px-2 py-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg border border-slate-700 font-bold transition-all"
+                            title="Remover item segurado e devolver à mochila"
+                          >
+                            Desequipar
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (selectedItem) {
+                              handleUseItemOnPokemon(selectedItem, idx);
+                            }
+                          }}
+                          disabled={!selectedItem}
+                          className="px-3 py-1 text-xs font-bold bg-teal-600 hover:bg-teal-500 disabled:opacity-30 text-white rounded-lg transition-all active:scale-95 shadow-sm"
+                        >
+                          {selectedItem?.category === 'battle' || selectedItem?.category === 'mega_stone' ? 'Equipar' : 'Usar'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

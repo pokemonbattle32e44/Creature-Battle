@@ -132,13 +132,13 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 Seus Pokémon da Equipe ({playerTeam.length})
               </div>
 
-              {playerTeam.map((pkmn, idx) => {
+              {safeTeam.map((pkmn, idx) => {
                 const isSelected = selectedIndex === idx;
                 const isLead = idx === 0;
 
                 return (
                   <div
-                    key={pkmn.instanceId || idx}
+                    key={`${pkmn.instanceId || 'team'}_${idx}`}
                     onClick={() => {
                       soundEngine.playClick();
                       setSelectedIndex(idx);
@@ -153,6 +153,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       <img
                         src={pkmn.sprites?.front || ''}
                         alt={pkmn.displayName}
+                        referrerPolicy="no-referrer"
                         style={getPokemonSpriteStyle(pkmn)}
                         className="w-12 h-12 object-contain"
                       />
@@ -245,6 +246,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       <img
                         src={selectedPokemon.sprites?.artwork || selectedPokemon.sprites?.animatedFront || selectedPokemon.sprites?.front || ''}
                         alt={selectedPokemon.displayName}
+                        referrerPolicy="no-referrer"
                         style={getPokemonSpriteStyle(selectedPokemon)}
                         className="w-32 h-32 object-contain"
                       />
@@ -300,10 +302,10 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       Ataques Conhecidos ({selectedPokemon.moves.length}/4)
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {selectedPokemon.moves.map((mInst) => {
+                      {selectedPokemon.moves.map((mInst, mIdx) => {
                         const moveData = getMove(mInst.moveId);
                         return (
-                          <div key={mInst.moveId} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center">
+                          <div key={`${mInst.moveId}_${mIdx}`} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center">
                             <div>
                               <div className="font-bold text-xs text-white capitalize">{moveData.name}</div>
                               <div className="text-[10px] text-slate-400 font-mono">Poder: {moveData.power || '—'}</div>
@@ -360,7 +362,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                     const isSelected = selectedBoxPkmnIndex === realIndex;
                     return (
                       <button
-                        key={pkmn.instanceId || idx}
+                        key={`${pkmn.instanceId || 'box'}_${realIndex}`}
                         onClick={() => {
                           soundEngine.playClick();
                           setSelectedBoxPkmnIndex(realIndex);
@@ -371,7 +373,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                             : 'bg-slate-950 border-slate-800 hover:border-slate-700'
                         }`}
                       >
-                        <img src={pkmn.sprites?.front || ''} alt={pkmn.displayName} style={getPokemonSpriteStyle(pkmn)} className="w-10 h-10 object-contain" />
+                        <img src={pkmn.sprites?.front || ''} alt={pkmn.displayName} referrerPolicy="no-referrer" style={getPokemonSpriteStyle(pkmn)} className="w-10 h-10 object-contain" />
                         <span className="text-[10px] font-bold text-white truncate w-full text-center">{pkmn.displayName}</span>
                         <span className="text-[9px] text-slate-400 font-mono">Nv.{pkmn.level}</span>
                       </button>
@@ -390,7 +392,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 {selectedPokemon ? (
                   <div className="space-y-4">
                     <div className="flex items-center gap-4 border-b border-slate-800 pb-3">
-                      <img src={selectedPokemon.sprites?.front || ''} alt={selectedPokemon.displayName} style={getPokemonSpriteStyle(selectedPokemon)} className="w-16 h-16 object-contain bg-slate-950 rounded-2xl border border-slate-800" />
+                      <img src={selectedPokemon.sprites?.front || ''} alt={selectedPokemon.displayName} referrerPolicy="no-referrer" style={getPokemonSpriteStyle(selectedPokemon)} className="w-16 h-16 object-contain bg-slate-950 rounded-2xl border border-slate-800" />
                       <div>
                         <h3 className="text-lg font-black text-white capitalize">{selectedPokemon.displayName}</h3>
                         <p className="text-xs text-slate-400 font-mono">Nível {selectedPokemon.level}</p>

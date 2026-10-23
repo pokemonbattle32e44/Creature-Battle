@@ -246,6 +246,7 @@ export const PokedexView: React.FC<PokedexViewProps> = ({
                           : `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pkmn.id}.png`
                       }
                       alt={pkmn.displayName}
+                      referrerPolicy="no-referrer"
                       className={`w-full h-full object-contain ${
                         !isCaught && isSeen ? 'brightness-0 opacity-40 blur-[0.5px]' : ''
                       } ${pkmn.id === 666 ? 'ghost-aura' : ''} ${pkmn.id === 0 ? 'missingno-pixel-glitch' : ''}`}
@@ -344,6 +345,7 @@ export const PokedexView: React.FC<PokedexViewProps> = ({
               <img
                 src={selectedPokemon.sprites.artwork || selectedPokemon.sprites.front}
                 alt={selectedPokemon.displayName}
+                referrerPolicy="no-referrer"
                 className="w-full h-full object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)]"
               />
             </div>

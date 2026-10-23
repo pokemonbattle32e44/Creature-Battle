@@ -1,7 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { Swords, Backpack, Disc, Users, Footprints, Shield, Heart, Sparkles, AlertCircle, ArrowLeft, Check, RotateCcw } from 'lucide-react';
-import { PokemonInstance, Move, Item, StatusAilment, WeatherType } from '../types/pokemon';
-import { calculateDamage, calculateCatchRate, getStatMultiplier, calculateStat, getEffectiveStat } from '../utils/pokemonCalc';
+import {
+  Swords,
+  Backpack,
+  Disc,
+  Users,
+  Footprints,
+  Shield,
+  Heart,
+  Sparkles,
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  RotateCcw,
+  Gem,
+  Flame,
+  Zap,
+} from 'lucide-react';
+import { PokemonInstance, Move, Item, StatusAilment, WeatherType, BiomeType } from '../types/pokemon';
+import {
+  calculateDamage,
+  calculateCatchRate,
+  getStatMultiplier,
+  calculateStat,
+  getEffectiveStat,
+  applyMegaEvolution,
+  revertMegaEvolution,
+  applyTerastallization,
+  revertTerastallization,
+} from '../utils/pokemonCalc';
+import { getAvailableMegaEvolution } from '../data/megaEvolutions';
+import { getBiomeConfig } from '../data/environments';
 import { getMove } from '../data/movesData';
 import { TYPE_COLORS, TYPE_NAMES_PT, getTypeEffectiveness } from '../data/typeChart';
 import { STARTERS_AND_POKEMON_DATABASE } from '../data/startersAndPokemon';
@@ -13,6 +41,9 @@ interface BattleViewProps {
   playerTeam: PokemonInstance[];
   wildPokemon: PokemonInstance;
   userInventory: Record<string, number>;
+  currentBiome?: BiomeType;
+  teraOrbCharged?: boolean;
+  onUseTeraOrb?: () => void;
   onUpdateTeam: (team: PokemonInstance[]) => void;
   onUpdateInventory: (inventory: Record<string, number>) => void;
   onWinBattle: (finalTeam: PokemonInstance[], moneyGained: number, caughtPokemon?: PokemonInstance) => void;
@@ -23,6 +54,9 @@ export const BattleView: React.FC<BattleViewProps> = ({
   playerTeam,
   wildPokemon: initialWild,
   userInventory,
+  currentBiome = 'forest',
+  teraOrbCharged = true,
+  onUseTeraOrb,
   onUpdateTeam,
   onUpdateInventory,
   onWinBattle,
@@ -34,6 +68,14 @@ export const BattleView: React.FC<BattleViewProps> = ({
   const [enemy, setEnemy] = useState<PokemonInstance>(initialWild);
   const [weather, setWeather] = useState<WeatherType>('none');
   const [weatherTurns, setWeatherTurns] = useState(0);
+
+  // Mega Evolution & Terastallization state (1 per battle)
+  const [megaEvolvedThisBattle, setMegaEvolvedThisBattle] = useState(false);
+  const [isMegaPending, setIsMegaPending] = useState(false);
+  const [terastallizedThisBattle, setTerastallizedThisBattle] = useState(false);
+  const [isTeraPending, setIsTeraPending] = useState(false);
+  const [isTeraShining, setIsTeraShining] = useState(false);
+  const [isMegaAura, setIsMegaAura] = useState(false);
 
   // Interface state
   const [battleMenu, setBattleMenu] = useState<'main' | 'fight' | 'bag' | 'switch'>('main');
@@ -208,7 +250,41 @@ export const BattleView: React.FC<BattleViewProps> = ({
       m.moveId === moveId ? { ...m, pp: Math.max(0, m.pp - 1) } : m
     );
     updatedTeam[activePlayerIndex] = { ...updatedTeam[activePlayerIndex], moves: currentMoves };
+
+    // Execute Mega Evolution if activated
+    if (isMegaPending) {
+      const availableMega = getAvailableMegaEvolution(activePlayer.pokedexId, activePlayer.heldItem, userInventory);
+      if (availableMega) {
+        setIsMegaAura(true);
+        soundEngine.playLevelUp();
+        const megaInstance = applyMegaEvolution(updatedTeam[activePlayerIndex], availableMega);
+        updatedTeam[activePlayerIndex] = megaInstance;
+        setMegaEvolvedThisBattle(true);
+        setIsMegaPending(false);
+        addLog(`💥 O Mega Bracelete ressoou com ${availableMega.requiredMegaStone}! ${activePlayer.displayName} Mega Evoluiu para ${availableMega.name}!`);
+        await delay(900);
+        setIsMegaAura(false);
+      }
+    }
+
+    // Execute Terastallization if activated
+    if (isTeraPending) {
+      setIsTeraShining(true);
+      soundEngine.playLevelUp();
+      confetti({ particleCount: 35, spread: 70, origin: { x: 0.25, y: 0.65 } });
+      const teraInstance = applyTerastallization(updatedTeam[activePlayerIndex]);
+      updatedTeam[activePlayerIndex] = teraInstance;
+      setTerastallizedThisBattle(true);
+      setIsTeraPending(false);
+      onUseTeraOrb?.();
+      addLog(`💎 O Orbe Tera cristalizou ${activePlayer.displayName} no tipo ${activePlayer.teraType?.toUpperCase()}!`);
+      await delay(900);
+      setIsTeraShining(false);
+    }
+
     setTeam(updatedTeam);
+
+    const currentCombatPlayer = updatedTeam[activePlayerIndex];
 
     // Determine speed and priority
     const pPriority = playerMove.priority || 0;
@@ -218,7 +294,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
     if (pPriority !== ePriority) {
       playerGoesFirst = pPriority > ePriority;
     } else {
-      const pSpeed = getEffectiveStat(activePlayer, 'spd', false, false, weather);
+      const pSpeed = getEffectiveStat(currentCombatPlayer, 'spd', false, false, weather);
       const eSpeed = getEffectiveStat(enemy, 'spd', false, false, weather);
       if (pSpeed === eSpeed) {
         playerGoesFirst = Math.random() < 0.5;
@@ -751,25 +827,48 @@ export const BattleView: React.FC<BattleViewProps> = ({
     }
 
     updatedTeam[activePlayerIndex] = player;
-    setTeam(updatedTeam);
-    onUpdateTeam(updatedTeam);
+    const finalCleanTeam = updatedTeam.map((p) => {
+      let cleaned = p;
+      if (cleaned.isMega) cleaned = revertMegaEvolution(cleaned);
+      if (cleaned.isTerastallized) cleaned = revertTerastallization(cleaned);
+      return cleaned;
+    });
+
+    setTeam(finalCleanTeam);
+    onUpdateTeam(finalCleanTeam);
 
     await delay(1500);
-    onWinBattle(updatedTeam, moneyGained);
+    onWinBattle(finalCleanTeam, moneyGained);
+  };
+
+  const handleExitBattle = () => {
+    const finalCleanTeam = team.map((p) => {
+      let cleaned = p;
+      if (cleaned.isMega) cleaned = revertMegaEvolution(cleaned);
+      if (cleaned.isTerastallized) cleaned = revertTerastallization(cleaned);
+      return cleaned;
+    });
+    onUpdateTeam(finalCleanTeam);
+    onRunAway();
   };
 
   const checkPlayerFainted = () => {
     const hasAvailable = team.some((p) => p.currentHp > 0);
     if (!hasAvailable) {
       addLog(`Todos os seus Pokémon desmaiaram! Você correu até o Centro Pokémon...`);
-      const healedTeam = team.map((p) => ({
-        ...p,
-        currentHp: p.maxHp,
-        status: 'none' as StatusAilment,
-        moves: p.moves.map((m) => ({ ...m, pp: m.maxPp })),
-      }));
+      const healedTeam = team.map((p) => {
+        let cleaned = p;
+        if (cleaned.isMega) cleaned = revertMegaEvolution(cleaned);
+        if (cleaned.isTerastallized) cleaned = revertTerastallization(cleaned);
+        return {
+          ...cleaned,
+          currentHp: cleaned.maxHp,
+          status: 'none' as StatusAilment,
+          moves: cleaned.moves.map((m) => ({ ...m, pp: m.maxPp })),
+        };
+      });
       onUpdateTeam(healedTeam);
-      setTimeout(() => onRunAway(), 2000);
+      setTimeout(() => handleExitBattle(), 2000);
     } else {
       setBattleMenu('switch');
     }
@@ -841,8 +940,15 @@ export const BattleView: React.FC<BattleViewProps> = ({
       confetti({ particleCount: 100, spread: 80, origin: { y: 0.5 } });
       addLog(`¡GOTCHA! O ${enemy.displayName} foi capturado com sucesso!`);
 
+      const finalCleanTeam = team.map((p) => {
+        let cleaned = p;
+        if (cleaned.isMega) cleaned = revertMegaEvolution(cleaned);
+        if (cleaned.isTerastallized) cleaned = revertTerastallization(cleaned);
+        return cleaned;
+      });
+
       await delay(1500);
-      onWinBattle(team, 100, enemy);
+      onWinBattle(finalCleanTeam, 100, enemy);
     } else {
       addLog(`Ah não! O ${enemy.displayName} escapou da Poké Bola!`);
       await delay(1000);
@@ -875,20 +981,36 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+  const biomeConfig = getBiomeConfig(currentBiome);
+  const availableMega = getAvailableMegaEvolution(activePlayer.pokedexId, activePlayer.heldItem, userInventory);
+  const canMegaNow = !megaEvolvedThisBattle && !activePlayer.isMega && !!availableMega;
+  const hasTeraOrb = (userInventory['tera_orb'] || 0) > 0 || teraOrbCharged !== false;
+  const canTeraNow = !terastallizedThisBattle && !activePlayer.isTerastallized && hasTeraOrb;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-3 sm:p-6 relative select-none">
+    <div className={`min-h-screen bg-gradient-to-b ${biomeConfig.backgroundGradient} text-slate-100 flex flex-col justify-between p-3 sm:p-6 relative select-none overflow-hidden`}>
       
-      {/* Top Bar / Run Away button */}
-      <div className="flex justify-between items-center z-20">
+      {/* Dynamic Ambient Background Effect */}
+      <div className="absolute inset-0 pointer-events-none opacity-30 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent"></div>
+
+      {/* Top Bar / Biome Indicator / Run Away button */}
+      <div className="flex justify-between items-center z-20 gap-2 flex-wrap">
         <button
-          onClick={onRunAway}
+          onClick={handleExitBattle}
           disabled={isAnimating}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 text-xs font-bold transition-all disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 text-xs font-bold transition-all disabled:opacity-50 shadow-md backdrop-blur-sm"
         >
           <ArrowLeft className="w-4 h-4" /> Voltar / Fugir
         </button>
 
-        <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded-xl border border-slate-800 text-xs font-bold text-emerald-400">
+        {/* Biome Environment Tag */}
+        <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-slate-800/80 shadow-lg text-xs font-black">
+          <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: biomeConfig.themeColor }}></span>
+          <span className="text-slate-300">Ambiente:</span>
+          <span style={{ color: biomeConfig.themeColor }}>{biomeConfig.name}</span>
+        </div>
+
+        <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800 text-xs font-bold text-emerald-400 shadow-md">
           <Swords className="w-4 h-4" /> BATALHA POKÉMON
         </div>
       </div>
@@ -963,8 +1085,14 @@ export const BattleView: React.FC<BattleViewProps> = ({
           </div>
 
           {/* Enemy Sprite Stage */}
-          <div className="relative flex justify-center items-center w-36 h-36 sm:w-44 sm:h-44">
-            <div className="absolute bottom-2 w-28 h-8 bg-black/40 rounded-full blur-md"></div>
+          <div className="relative flex flex-col justify-center items-center w-36 h-36 sm:w-44 sm:h-44">
+            {enemy.isTerastallized && (
+              <div className="absolute -top-3 z-30 flex items-center gap-1 bg-cyan-950/90 border border-cyan-400 px-2 py-0.5 rounded-full shadow-lg shadow-cyan-500/50 animate-bounce">
+                <Gem className="w-3.5 h-3.5 text-cyan-300 animate-spin" />
+                <span className="text-[9px] font-black uppercase text-cyan-200">TERA {enemy.teraType?.toUpperCase()}</span>
+              </div>
+            )}
+            <div className={`absolute bottom-1 w-32 h-8 rounded-full bg-gradient-to-r ${biomeConfig.groundGradient} shadow-lg opacity-90 border`}></div>
             <img
               src={enemy.sprites.animatedFront || enemy.sprites.front}
               alt={enemy.displayName}
@@ -983,7 +1111,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 enemy.pokedexId === 0 || enemy.name.toLowerCase() === 'missingno' ? 'missingno-pixel-glitch' : ''
               } ${
                 enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
-              }`}
+              } ${enemy.isTerastallized ? 'drop-shadow-[0_0_15px_rgba(56,189,248,0.7)]' : ''}`}
             />
           </div>
         </div>
@@ -991,8 +1119,20 @@ export const BattleView: React.FC<BattleViewProps> = ({
         {/* 2. PLAYER POKEMON SECTION (BOTTOM LEFT) */}
         <div className="flex justify-between items-end gap-4 mt-4">
           {/* Active Player Sprite Stage */}
-          <div className="relative flex justify-center items-center w-36 h-36 sm:w-44 sm:h-44">
-            <div className="absolute bottom-2 w-28 h-8 bg-black/40 rounded-full blur-md"></div>
+          <div className="relative flex flex-col justify-center items-center w-36 h-36 sm:w-44 sm:h-44">
+            {activePlayer.isTerastallized && (
+              <div className="absolute -top-3 z-30 flex items-center gap-1 bg-cyan-950/90 border border-cyan-400 px-2.5 py-0.5 rounded-full shadow-lg shadow-cyan-500/50 animate-bounce">
+                <Gem className="w-3.5 h-3.5 text-cyan-300 animate-spin" />
+                <span className="text-[10px] font-black uppercase text-cyan-200">TERA {activePlayer.teraType?.toUpperCase()}</span>
+              </div>
+            )}
+            {activePlayer.isMega && (
+              <div className="absolute -top-3 z-30 flex items-center gap-1 bg-purple-950/90 border border-pink-400 px-2 py-0.5 rounded-full shadow-lg shadow-pink-500/50">
+                <Zap className="w-3.5 h-3.5 text-pink-400 animate-pulse" />
+                <span className="text-[9px] font-black uppercase text-pink-200">MEGA</span>
+              </div>
+            )}
+            <div className={`absolute bottom-1 w-32 h-8 rounded-full bg-gradient-to-r ${biomeConfig.groundGradient} shadow-lg opacity-90 border`}></div>
             <img
               src={activePlayer.sprites.animatedBack || activePlayer.sprites.back || activePlayer.sprites.front}
               alt={activePlayer.displayName}
@@ -1011,6 +1151,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 activePlayer.pokedexId === 0 || activePlayer.name.toLowerCase() === 'missingno' ? 'missingno-pixel-glitch' : ''
               } ${
                 activePlayer.pokedexId === 666 || activePlayer.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
+              } ${isTeraShining || activePlayer.isTerastallized ? 'drop-shadow-[0_0_20px_rgba(56,189,248,0.8)] filter brightness-110' : ''} ${
+                isMegaAura || activePlayer.isMega ? 'drop-shadow-[0_0_20px_rgba(236,72,153,0.8)] filter contrast-110' : ''
               }`}
             />
           </div>
@@ -1020,6 +1162,16 @@ export const BattleView: React.FC<BattleViewProps> = ({
             <div className="flex justify-between items-center text-xs font-bold mb-1">
               <div className="flex items-center gap-1.5 flex-wrap truncate">
                 <span className="capitalize text-white font-extrabold">{activePlayer.displayName}</span>
+                {activePlayer.isMega && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-gradient-to-r from-pink-500 to-purple-600 text-white">
+                    MEGA
+                  </span>
+                )}
+                {activePlayer.isTerastallized && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-cyan-900/80 text-cyan-300 border border-cyan-500">
+                    💎 {activePlayer.teraType?.toUpperCase()}
+                  </span>
+                )}
                 <RarityBadge
                   isRestricted={activePlayer.isRestricted}
                   isPseudoLegendary={activePlayer.isPseudoLegendary}
@@ -1149,7 +1301,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
             </button>
 
             <button
-              onClick={onRunAway}
+              onClick={handleExitBattle}
               disabled={isAnimating}
               className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
             >
@@ -1161,18 +1313,58 @@ export const BattleView: React.FC<BattleViewProps> = ({
         {/* Fight Menu: Move Selector */}
         {battleMenu === 'fight' && (
           <div>
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Escolha o Ataque:</span>
+            <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ataque:</span>
+                {/* Mega Evolution Button */}
+                {canMegaNow && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playClick();
+                      setIsMegaPending(!isMegaPending);
+                    }}
+                    className={`px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 border transition-all ${
+                      isMegaPending
+                        ? 'bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 text-white border-pink-400 shadow-lg shadow-pink-500/40 scale-105 ring-2 ring-pink-400'
+                        : 'bg-slate-800 text-pink-300 border-pink-500/40 hover:bg-slate-700'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>{isMegaPending ? '⚡ MEGA ATIVA' : '⚡ MEGA EVOLUÇÃO'}</span>
+                  </button>
+                )}
+
+                {/* Terastallization Button */}
+                {canTeraNow && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playClick();
+                      setIsTeraPending(!isTeraPending);
+                    }}
+                    className={`px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 border transition-all ${
+                      isTeraPending
+                        ? 'bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 text-white border-cyan-300 shadow-lg shadow-cyan-500/50 scale-105 ring-2 ring-cyan-300 animate-pulse'
+                        : 'bg-slate-800 text-cyan-300 border-cyan-500/40 hover:bg-slate-700'
+                    }`}
+                  >
+                    <Gem className="w-3.5 h-3.5" />
+                    <span>{isTeraPending ? `💎 TERA ${activePlayer.teraType?.toUpperCase()} (ATIVO)` : `💎 TERASTALIZAR (${activePlayer.teraType?.toUpperCase()})`}</span>
+                  </button>
+                )}
+              </div>
+
               <button
                 onClick={() => setBattleMenu('main')}
-                className="text-xs text-slate-400 hover:text-white underline font-semibold"
+                className="text-xs text-slate-400 hover:text-white underline font-semibold ml-auto"
               >
                 Voltar
               </button>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {activePlayer.moves.map((mInstance) => {
+              {activePlayer.moves.map((mInstance, idx) => {
                 const moveData = getMove(mInstance.moveId);
                 const isOutOfPp = mInstance.pp <= 0;
                 const isStatus = moveData.category === 'status' || !moveData.power;
@@ -1194,7 +1386,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
                 return (
                   <button
-                    key={mInstance.moveId}
+                    key={`${mInstance.moveId}_${idx}`}
                     onClick={() => handlePlayerMoveSelect(mInstance.moveId)}
                     disabled={isOutOfPp || isAnimating}
                     className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all group ${
@@ -1311,7 +1503,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 const isFainted = pkmn.currentHp <= 0;
                 return (
                   <button
-                    key={pkmn.instanceId}
+                    key={`${pkmn.instanceId || 'team'}_${idx}`}
                     onClick={() => handleSwitchPokemon(idx)}
                     disabled={isCurrent || isFainted || isAnimating}
                     className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${

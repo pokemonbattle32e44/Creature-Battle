@@ -296,9 +296,9 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
                     Nenhum amigo adicionado ainda. Busque jogadores acima!
                   </div>
                 ) : (
-                  friendsList.map((friend) => (
+                  friendsList.map((friend, fIdx) => (
                     <div
-                      key={friend.uid}
+                      key={`${friend.uid}_${fIdx}`}
                       className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center justify-between"
                     >
                       <div className="flex items-center gap-3">
@@ -337,9 +337,9 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
                   Nenhuma solicitação pendente.
                 </div>
               ) : (
-                pendingRequests.map((req) => (
+                pendingRequests.map((req, rIdx) => (
                   <div
-                    key={req.id}
+                    key={`${req.id}_${rIdx}`}
                     className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
@@ -379,9 +379,9 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
                   Nenhum presente recebido ainda.
                 </div>
               ) : (
-                incomingGifts.map((gift) => (
+                incomingGifts.map((gift, gIdx) => (
                   <div
-                    key={gift.id}
+                    key={`${gift.id}_${gIdx}`}
                     className="bg-slate-950 p-4 rounded-2xl border border-amber-500/30 flex items-center justify-between shadow-lg"
                   >
                     <div className="flex items-center gap-3">
@@ -486,10 +486,10 @@ export const FriendsAndGiftsModal: React.FC<FriendsAndGiftsModalProps> = ({
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
                     >
                       <option value="">-- Selecione um Pokémon --</option>
-                      {[...userCloudProfile.team, ...userCloudProfile.pcBox].map((p) => {
-                        const instId = p.instanceId || (p as any).id;
+                      {[...userCloudProfile.team, ...userCloudProfile.pcBox].map((p, pIdx) => {
+                        const instId = p.instanceId || (p as any).id || `pkmn_${pIdx}`;
                         return (
-                          <option key={instId} value={instId}>
+                          <option key={`${instId}_${pIdx}`} value={instId}>
                             {p.displayName} (Nv.{p.level}) {p.isShiny ? '✨' : ''}
                           </option>
                         );

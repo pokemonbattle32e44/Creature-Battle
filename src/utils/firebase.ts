@@ -285,3 +285,70 @@ export async function addSystemLog(type: string, participants: string[], detail:
     console.error('Failed to log system event:', e);
   }
 }
+
+// Admin Events Management System
+import { GameEvent } from '../types/pokemon';
+
+export async function fetchAllEvents(): Promise<GameEvent[]> {
+  try {
+    const eventsRef = collection(db, 'events');
+    const snap = await getDocs(eventsRef);
+    const list: GameEvent[] = [];
+    snap.forEach((d) => {
+      list.push({ id: d.id, ...(d.data() as Omit<GameEvent, 'id'>) });
+    });
+    return list;
+  } catch (e) {
+    console.warn('Failed to fetch events from Firestore:', e);
+    return [];
+  }
+}
+
+export function subscribeToEvents(callback: (events: GameEvent[]) => void) {
+  try {
+    const eventsRef = collection(db, 'events');
+    return onSnapshot(
+      eventsRef,
+      (snap) => {
+        const list: GameEvent[] = [];
+        const now = new Date().toISOString();
+        snap.forEach((d) => {
+          const data = d.data() as Omit<GameEvent, 'id'>;
+          // Auto check active window if startDate/endDate exist
+          let isActive = data.active;
+          if (data.startDate && now < data.startDate) isActive = false;
+          if (data.endDate && now > data.endDate) isActive = false;
+
+          list.push({
+            id: d.id,
+            ...data,
+            active: isActive,
+          });
+        });
+        callback(list);
+      },
+      (err) => console.warn('Events snapshot error:', err)
+    );
+  } catch (e) {
+    console.warn('Failed to subscribe to events:', e);
+    return () => {};
+  }
+}
+
+export async function saveGameEvent(event: Partial<GameEvent>): Promise<string> {
+  const eventsRef = collection(db, 'events');
+  const eventId = event.id || `event_${Date.now()}`;
+  const docRef = doc(eventsRef, eventId);
+  const payload = sanitizeData({
+    ...event,
+    id: eventId,
+    updatedAt: new Date().toISOString(),
+  });
+  await setDoc(docRef, payload, { merge: true });
+  return eventId;
+}
+
+export async function deleteGameEvent(eventId: string): Promise<void> {
+  const docRef = doc(db, 'events', eventId);
+  await deleteDoc(docRef);
+}

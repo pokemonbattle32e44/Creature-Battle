@@ -23,7 +23,9 @@ export const ShopView: React.FC<ShopViewProps> = ({
   onChallengeGhost,
   onBack,
 }) => {
-  const [activeCategory, setActiveCategory] = useState<'all' | 'ball' | 'medicine' | 'candy' | 'battle' | 'tm' | 'incense'>('all');
+  const [activeCategory, setActiveCategory] = useState<
+    'all' | 'ball' | 'medicine' | 'candy' | 'battle' | 'tm' | 'incense' | 'mega_stone' | 'key_item'
+  >('all');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -127,11 +129,13 @@ export const ShopView: React.FC<ShopViewProps> = ({
         <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar mb-6 justify-center">
           {[
             { id: 'all', label: 'Todos os Itens' },
+            { id: 'mega_stone', label: '⚡ Mega Stones' },
+            { id: 'key_item', label: '💎 Chave & Tera' },
+            { id: 'battle', label: '🛡️ Itens de Batalha' },
             { id: 'incense', label: '🌸 Incensos' },
             { id: 'ball', label: 'Poké Bolas' },
             { id: 'medicine', label: 'Medicamentos' },
             { id: 'candy', label: 'Doces' },
-            { id: 'battle', label: 'Batalha' },
             { id: 'tm', label: 'TMs (Ataques)' },
           ].map((cat) => (
             <button

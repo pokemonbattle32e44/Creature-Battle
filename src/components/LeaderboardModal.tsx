@@ -97,7 +97,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose }) =
 
               return (
                 <div
-                  key={player.uid}
+                  key={`${player.uid || 'player'}_${idx}`}
                   className={`p-4 rounded-2xl border flex items-center justify-between transition-all ${
                     rank === 1
                       ? 'bg-amber-950/20 border-amber-500/40 shadow-lg'

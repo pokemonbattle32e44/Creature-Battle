@@ -22,8 +22,8 @@ service cloud.firestore {
     match /pvp_battles/{battleId} {
       allow read, write: if true;
     }
-    match /logs/{logId} {
-      allow read, create, write: if true;
+    match /events/{eventId} {
+      allow read, write: if true;
     }
     match /{document=**} {
       allow read, write: if true;

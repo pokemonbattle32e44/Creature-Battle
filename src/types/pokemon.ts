@@ -139,6 +139,74 @@ export interface PokemonBaseData {
   catchRate: number;
 }
 
+export type PokemonNature =
+  | 'Hardy'
+  | 'Lonely'
+  | 'Brave'
+  | 'Adamant'
+  | 'Naughty'
+  | 'Bold'
+  | 'Docile'
+  | 'Relaxed'
+  | 'Impish'
+  | 'Lax'
+  | 'Timid'
+  | 'Hasty'
+  | 'Serious'
+  | 'Jolly'
+  | 'Naive'
+  | 'Modest'
+  | 'Mild'
+  | 'Quiet'
+  | 'Bashful'
+  | 'Rash'
+  | 'Calm'
+  | 'Gentle'
+  | 'Sassy'
+  | 'Careful'
+  | 'Quirky';
+
+export interface IVs {
+  hp: number;
+  atk: number;
+  def: number;
+  spAtk: number;
+  spDef: number;
+  spd: number;
+}
+
+export interface EVs {
+  hp: number;
+  atk: number;
+  def: number;
+  spAtk: number;
+  spDef: number;
+  spd: number;
+}
+
+export interface MegaEvolutionConfig {
+  id: string; // e.g. 'charizard-mega-x'
+  name: string; // 'Charizard Mega X'
+  baseSpeciesId: number; // 6
+  requiredMegaStone: string; // 'charizardite_x'
+  types: PokemonType[];
+  baseStats: {
+    hp: number;
+    atk: number;
+    def: number;
+    spAtk: number;
+    spDef: number;
+    spd: number;
+  };
+  ability: string;
+  sprites: {
+    front: string;
+    back: string;
+    animatedFront?: string;
+    animatedBack?: string;
+  };
+}
+
 export interface PokemonInstance {
   instanceId: string;
   pokedexId: number;
@@ -197,6 +265,37 @@ export interface PokemonInstance {
     targetId: number;
     targetName: string;
   };
+  // Advanced Competitve Stats (Gen 6-9)
+  nature?: PokemonNature;
+  ivs?: IVs;
+  evs?: EVs;
+  // Terastallization (Gen 9)
+  teraType?: PokemonType;
+  isTerastallized?: boolean;
+  // Mega Evolution (Gen 6/7)
+  isMega?: boolean;
+  megaFormId?: string;
+  originalFormBeforeMega?: {
+    name: string;
+    displayName: string;
+    types: PokemonType[];
+    baseStats: {
+      hp: number;
+      atk: number;
+      def: number;
+      spAtk: number;
+      spDef: number;
+      spd: number;
+    };
+    sprites: {
+      front: string;
+      back: string;
+      animatedFront?: string;
+      animatedBack?: string;
+      artwork?: string;
+    };
+    ability: string;
+  };
   // For Transform move (Ditto)
   transformed?: {
     originalPokedexId: number;
@@ -209,10 +308,58 @@ export interface PokemonInstance {
   };
 }
 
+export type BiomeType =
+  | 'forest'
+  | 'ocean'
+  | 'plain'
+  | 'desert'
+  | 'cave'
+  | 'mountain'
+  | 'volcano'
+  | 'swamp'
+  | 'ruins';
+
+export interface BiomeConfig {
+  id: BiomeType;
+  name: string;
+  description: string;
+  themeColor: string;
+  icon: string;
+  backgroundGradient: string;
+  groundGradient: string;
+  particleType: 'leaves' | 'bubbles' | 'dust' | 'sand' | 'spores' | 'snow' | 'embers' | 'mist' | 'runes';
+  minLevel: number;
+  maxLevel: number;
+  encounterPool: Array<{
+    id: number;
+    name: string;
+    weight: number;
+  }>;
+}
+
+export interface GameEvent {
+  id: string;
+  name: string;
+  description: string;
+  bannerUrl?: string;
+  startDate: string; // ISO
+  endDate: string; // ISO
+  active: boolean;
+  spawnBoosts: Record<string, number>; // e.g. { "25": 200 } for +200% pikachu
+  shinyMultiplier: number; // e.g. 2.0 = 2x shiny chance
+  expMultiplier: number; // e.g. 1.5 = +50% exp
+  moneyMultiplier: number; // e.g. 2.0 = 2x pokedollars
+  itemDropMultiplier: number; // e.g. 2.0
+  targetBiomes?: BiomeType[]; // if empty/undefined, applies to all
+  allowRestrictedSpawns?: boolean; // allow Legendary/Mythical wild spawns
+  createdAt?: string;
+  createdBy?: string;
+}
+
 export interface Item {
   id: string;
   name: string;
-  category: 'ball' | 'medicine' | 'battle' | 'candy' | 'tm' | 'repel' | 'incense';
+  category: 'ball' | 'medicine' | 'battle' | 'candy' | 'tm' | 'repel' | 'incense' | 'mega_stone' | 'key_item';
   price: number;
   description: string;
   sprite: string;
@@ -225,6 +372,8 @@ export interface Item {
   statBoost?: { stat: keyof StatStages; stages: number };
   incenseType?: PokemonType;
   incenseSpecial?: 'shiny' | 'pseudo' | 'legendary';
+  megaStoneForSpeciesId?: number;
+  megaStoneFormId?: string;
 }
 
 export interface UserSaveData {
@@ -240,4 +389,8 @@ export interface UserSaveData {
   pokedexSeen?: number[];
   pokedexCaught?: number[];
   lastSavedAt: string;
+  // Biome & Tera additions
+  currentBiome?: BiomeType;
+  battleCountInBiome?: number;
+  teraOrbCharged?: boolean;
 }

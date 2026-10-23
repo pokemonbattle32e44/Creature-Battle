@@ -701,11 +701,11 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
                     <button onClick={() => setMenuMode('main')} className="text-[10px] text-indigo-400 hover:underline">Voltar</button>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {myActivePkmn?.moves.map((m) => {
+                    {myActivePkmn?.moves.map((m, mIdx) => {
                       const mData = getMove(m.moveId);
                       return (
                         <button
-                          key={m.moveId}
+                          key={`${m.moveId}_${mIdx}`}
                           onClick={() => handleSendAction({ type: 'move', moveId: m.moveId })}
                           className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left flex flex-col justify-between"
                         >
@@ -728,7 +728,7 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
                   <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto">
                     {myTeam?.map((pkmn, idx) => (
                       <button
-                        key={pkmn.instanceId || idx}
+                        key={`${pkmn.instanceId || 'pvp_my'}_${idx}`}
                         disabled={idx === myActiveIdx || pkmn.currentHp <= 0}
                         onClick={() => handleSendAction({ type: 'switch', switchIndex: idx })}
                         className={`p-2 rounded-xl border text-left flex items-center gap-2 ${
@@ -739,7 +739,7 @@ export const MultiplayerPvPView: React.FC<MultiplayerPvPViewProps> = ({
                             : 'bg-slate-950 hover:bg-slate-800 border-slate-800'
                         }`}
                       >
-                        <img src={pkmn.sprites.front} alt={pkmn.displayName} className="w-8 h-8 object-contain" />
+                        <img src={pkmn.sprites.front} alt={pkmn.displayName} referrerPolicy="no-referrer" className="w-8 h-8 object-contain" />
                         <div>
                           <p className="text-[10px] font-bold text-white truncate">{pkmn.displayName}</p>
                           <p className="text-[9px] text-slate-400 font-mono">{pkmn.currentHp}/{pkmn.maxHp} HP</p>

@@ -327,7 +327,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
                     <div className="space-y-3">
                       {/* Sprite & Name */}
                       <div className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
-                        <img src={selectedMyPokemon.sprites.front} alt={selectedMyPokemon.displayName} className="w-16 h-16 object-contain" />
+                        <img src={selectedMyPokemon.sprites.front} alt={selectedMyPokemon.displayName} referrerPolicy="no-referrer" className="w-16 h-16 object-contain" />
                         <div>
                           <p className="text-sm font-black text-white flex items-center gap-1.5">
                             {selectedMyPokemon.displayName}
@@ -414,7 +414,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
                     <div className="space-y-3">
                       {/* Sprite & Name */}
                       <div className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
-                        <img src={partnerPokemon.sprites.front} alt={partnerPokemon.displayName} className="w-16 h-16 object-contain" />
+                        <img src={partnerPokemon.sprites.front} alt={partnerPokemon.displayName} referrerPolicy="no-referrer" className="w-16 h-16 object-contain" />
                         <div>
                           <p className="text-sm font-black text-white flex items-center gap-1.5">
                             {partnerPokemon.displayName}
@@ -478,12 +478,12 @@ export const TradeView: React.FC<TradeViewProps> = ({
                 Escolha 1 Pokémon da sua coleção para oferecer na troca:
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto pr-1">
-                {allAvailablePokemon.map((pkmn) => {
-                  const instId = pkmn.instanceId || (pkmn as any).id;
+                {allAvailablePokemon.map((pkmn, pIdx) => {
+                  const instId = pkmn.instanceId || (pkmn as any).id || `avail_${pIdx}`;
                   const isSelected = (selectedMyPokemon?.instanceId || (selectedMyPokemon as any)?.id) === instId;
                   return (
                     <button
-                      key={instId}
+                      key={`${instId}_${pIdx}`}
                       onClick={() => handleSelectPokemonForTrade(pkmn)}
                       className={`p-2 rounded-xl border text-center flex flex-col items-center transition-all ${
                         isSelected
@@ -491,7 +491,7 @@ export const TradeView: React.FC<TradeViewProps> = ({
                           : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
                       }`}
                     >
-                      <img src={pkmn.sprites.front} alt={pkmn.displayName} className="w-12 h-12 object-contain" />
+                      <img src={pkmn.sprites.front} alt={pkmn.displayName} referrerPolicy="no-referrer" className="w-12 h-12 object-contain" />
                       <span className="text-[10px] font-bold truncate w-full">{pkmn.displayName}</span>
                       <span className="text-[9px] text-slate-400 font-mono">Nv.{pkmn.level}</span>
                     </button>
