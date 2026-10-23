@@ -292,41 +292,52 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       {/* Rotating Biome & Tera Orb Status Widget */}
       <div className="w-full max-w-xl mx-auto mb-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2.5 z-10">
         {/* Biome Status */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex items-center justify-between backdrop-blur-md shadow-lg">
-          <div className="flex items-center gap-2.5">
-            <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border"
-              style={{
-                backgroundColor: `${biomeConfig.themeColor}20`,
-                borderColor: `${biomeConfig.themeColor}40`,
-                color: biomeConfig.themeColor,
-              }}
-            >
-              <Compass className="w-4 h-4" />
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between backdrop-blur-md shadow-lg gap-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border"
+                style={{
+                  backgroundColor: `${biomeConfig.themeColor}20`,
+                  borderColor: `${biomeConfig.themeColor}40`,
+                  color: biomeConfig.themeColor,
+                }}
+              >
+                <Compass className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Cenário / Bioma</div>
+                <div className="text-xs font-black truncate max-w-[140px]" style={{ color: biomeConfig.themeColor }}>
+                  {biomeConfig.name}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Ambiente de Combate</div>
-              <div className="text-xs font-black truncate max-w-[140px]" style={{ color: biomeConfig.themeColor }}>
-                {biomeConfig.name}
-              </div>
-              <div className="text-[10px] text-slate-400">
-                Gira em <strong className="text-emerald-400 font-mono">{Math.max(1, battlesPerRotation - battleCountInBiome)}</strong> batalhas
-              </div>
+            {onChangeBiome && (
+              <button
+                onClick={() => {
+                  soundEngine.playClick();
+                  onChangeBiome(getNextBiome(currentBiome));
+                }}
+                className="p-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-all text-[10px] font-bold flex items-center gap-1 shrink-0 active:scale-95"
+                title="Mudar para o próximo cenário agora"
+              >
+                <RefreshCw className="w-3 h-3 text-emerald-400" />
+                <span>Viajar</span>
+              </button>
+            )}
+          </div>
+          <div>
+            <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
+              <span>Próximo Cenário:</span>
+              <span><strong className="text-emerald-400 font-mono">{battleCountInBiome}</strong> / <strong className="text-slate-300 font-mono">{battlesPerRotation}</strong> batalhas</span>
+            </div>
+            <div className="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden border border-slate-700/40">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.round((battleCountInBiome / battlesPerRotation) * 100))}%` }}
+              />
             </div>
           </div>
-          {onChangeBiome && (
-            <button
-              onClick={() => {
-                soundEngine.playClick();
-                onChangeBiome(getNextBiome(currentBiome));
-              }}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-all text-[10px] font-bold flex items-center gap-1 shrink-0 active:scale-95"
-              title="Girar para o próximo bioma"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Girar</span>
-            </button>
-          )}
         </div>
 
         {/* Tera Orb Station */}

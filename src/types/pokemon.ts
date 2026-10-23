@@ -346,6 +346,7 @@ export interface GameEvent {
   endDate: string; // ISO
   active: boolean;
   spawnBoosts: Record<string, number>; // e.g. { "25": 200 } for +200% pikachu
+  boostedSpeciesBiomes?: BiomeType[]; // specific areas/biomes where the boosted species appears
   shinyMultiplier: number; // e.g. 2.0 = 2x shiny chance
   expMultiplier: number; // e.g. 1.5 = +50% exp
   moneyMultiplier: number; // e.g. 2.0 = 2x pokedollars
@@ -354,6 +355,18 @@ export interface GameEvent {
   allowRestrictedSpawns?: boolean; // allow Legendary/Mythical wild spawns
   createdAt?: string;
   createdBy?: string;
+}
+
+export interface BroadcastEncounter {
+  id?: string;
+  speciesId: number;
+  speciesName: string;
+  level: number;
+  isShiny: boolean;
+  active: boolean;
+  createdBy: string;
+  createdAt: string;
+  broadcastNumber: number;
 }
 
 export interface Item {
@@ -392,5 +405,6 @@ export interface UserSaveData {
   // Biome & Tera additions
   currentBiome?: BiomeType;
   battleCountInBiome?: number;
+  battlesPerRotation?: number;
   teraOrbCharged?: boolean;
 }

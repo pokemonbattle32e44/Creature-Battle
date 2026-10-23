@@ -46,8 +46,13 @@ export async function generateWildEncounter(
       allowRestrictedSpawns = true;
     }
     if (ev.spawnBoosts) {
-      for (const [key, pct] of Object.entries(ev.spawnBoosts)) {
-        eventBoostedSpecies[key] = (eventBoostedSpecies[key] || 0) + pct;
+      // Check if this boosted species is restricted to specific biomes
+      const biomesForSpecies = ev.boostedSpeciesBiomes;
+      const appliesToCurrentBiome = !biomesForSpecies || biomesForSpecies.length === 0 || biomesForSpecies.includes(currentBiome);
+      if (appliesToCurrentBiome) {
+        for (const [key, pct] of Object.entries(ev.spawnBoosts)) {
+          eventBoostedSpecies[key] = (eventBoostedSpecies[key] || 0) + pct;
+        }
       }
     }
   }
@@ -82,6 +87,15 @@ export async function generateWildEncounter(
   // If no special incense is active and tier is regular, check biome encounter table first (65% chance to encounter biome native)
   if (!isLegendaryIncense && !isPseudoIncense && !typeFilter && chosenTier === 'regular' && Math.random() < 0.65) {
     const table = [...biomeConfig.encounterPool];
+
+    // If an active event targets this biome with boosted species, inject it into the table so it can appear
+    for (const [speciesKey, boostPct] of Object.entries(eventBoostedSpecies)) {
+      const speciesIdNum = parseInt(speciesKey, 10);
+      if (speciesIdNum && !table.some((e) => e.id === speciesIdNum)) {
+        table.push({ id: speciesIdNum, name: `Event #${speciesIdNum}`, weight: Math.floor(20 * (1 + boostPct / 100)) });
+      }
+    }
+
     // Apply event spawn boosts to weights:
     // e.g. +200% boost -> multiplier is 1 + 200/100 = 3.0x
     const weightedTable = table.map((entry) => {
@@ -171,12 +185,33 @@ export async function generateWildEncounter(
     wildLevel = Math.max(1, Math.min(100, rawLevel));
   }
 
-  // 5. Fetch Full Base Data & Instantiate
-  const baseData = await fetchPokemonData(chosenSpeciesId);
+  // 5. Fetch Full Base Data
+  let baseData = await fetchPokemonData(chosenSpeciesId);
   if (!baseData) {
-    const fallbackBase = await fetchPokemonData(25); // Pikachu
-    const wildInstance = createPokemonInstance(fallbackBase!, wildLevel, isShiny);
-    return { wildInstance, consumedIncense };
+    baseData = (await fetchPokemonData(25))!;
+  }
+
+  // 6. Natural Evolution Progression by Level:
+  // "um pokemon x evolui no nivel 36, mas esse mesmo pokemon x esta aparecendo acima do nivel 36 o que nao faz sentido, entao corrija isso."
+  // If the wild level meets or exceeds the species' evolution level requirement, automatically advance along the evolution chain!
+  let currentBase = baseData;
+  let safetySteps = 0;
+  while (
+    currentBase.evolution &&
+    currentBase.evolution.minLevel &&
+    wildLevel >= currentBase.evolution.minLevel &&
+    safetySteps < 5
+  ) {
+    const nextEvo = await fetchPokemonData(currentBase.evolution.targetId);
+    if (!nextEvo || nextEvo.id === currentBase.id) break;
+    currentBase = nextEvo;
+    safetySteps++;
+  }
+  baseData = currentBase;
+
+  // Prevent pre-evolution appearing above its natural evolution level if it still has a minLevel evolution:
+  if (baseData.evolution && baseData.evolution.minLevel && wildLevel >= baseData.evolution.minLevel) {
+    wildLevel = Math.max(1, baseData.evolution.minLevel - 1);
   }
 
   const wildInstance = createPokemonInstance(baseData, wildLevel, isShiny);

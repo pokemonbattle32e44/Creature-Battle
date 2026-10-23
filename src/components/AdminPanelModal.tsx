@@ -16,12 +16,24 @@ import {
   TrendingUp,
   MapPin,
   CheckCircle,
+  Radio,
+  Globe,
 } from 'lucide-react';
 import { STARTERS_AND_POKEMON_DATABASE } from '../data/startersAndPokemon';
 import { ITEMS_DATABASE } from '../data/itemsData';
 import { createPokemonInstance } from '../utils/pokemonCalc';
-import { PokemonInstance, GameEvent, BiomeType } from '../types/pokemon';
-import { UserCloudData, syncUserToCloud, addSystemLog, saveGameEvent, deleteGameEvent, fetchAllEvents } from '../utils/firebase';
+import { PokemonInstance, GameEvent, BiomeType, BroadcastEncounter } from '../types/pokemon';
+import {
+  UserCloudData,
+  syncUserToCloud,
+  addSystemLog,
+  saveGameEvent,
+  deleteGameEvent,
+  fetchAllEvents,
+  setBroadcastEncounter,
+  clearBroadcastEncounter,
+  subscribeToBroadcastEncounter,
+} from '../utils/firebase';
 import { soundEngine } from '../utils/soundEngine';
 import { BIOMES, BIOME_ROTATION_ORDER } from '../data/environments';
 import { NATIONAL_POKEDEX_INDEX } from '../data/nationalPokedex';
@@ -37,7 +49,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onUpdateProfile,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'resources' | 'events'>('resources');
+  const [activeTab, setActiveTab] = useState<'resources' | 'events' | 'broadcast'>('resources');
   const [moneyAmount, setMoneyAmount] = useState('50000');
   const [selectedPokedexId, setSelectedPokedexId] = useState<number>(666); // Default to GHOST
   const [level, setLevel] = useState<number>(100);
@@ -61,12 +73,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [eventDurationHours, setEventDurationHours] = useState(24);
   const [boostedSpeciesId, setBoostedSpeciesId] = useState<number>(25); // Pikachu
   const [boostPercentage, setBoostPercentage] = useState<number>(200); // +200% = 3x chance
+  const [boostedSpeciesBiomes, setBoostedSpeciesBiomes] = useState<BiomeType[]>([]);
   const [selectedBiomes, setSelectedBiomes] = useState<BiomeType[]>([]);
   const [allowRestrictedSpawns, setAllowRestrictedSpawns] = useState(false);
   const [eventActiveImmediate, setEventActiveImmediate] = useState(true);
 
+  // Global Broadcast Next Wild Encounter State
+  const [broadcastSpeciesId, setBroadcastSpeciesId] = useState<number>(25);
+  const [broadcastLevel, setBroadcastLevel] = useState<number>(50);
+  const [broadcastShiny, setBroadcastShiny] = useState<boolean>(true);
+  const [currentBroadcast, setCurrentBroadcast] = useState<BroadcastEncounter | null>(null);
+
   useEffect(() => {
     loadEvents();
+    const unsub = subscribeToBroadcastEncounter((bc) => {
+      setCurrentBroadcast(bc);
+    });
+    return () => unsub();
   }, []);
 
   const loadEvents = async () => {
@@ -160,6 +183,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         [String(boostedSpeciesId)]: boostPercentage,
       },
       targetBiomes: selectedBiomes.length > 0 ? selectedBiomes : undefined,
+      boostedSpeciesBiomes: boostedSpeciesBiomes.length > 0 ? boostedSpeciesBiomes : undefined,
       allowRestrictedSpawns,
       createdBy: userCloudProfile.email,
     };
@@ -173,7 +197,31 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setEditingEventId(null);
     setEventName('');
     setEventDescription('');
+    setBoostedSpeciesBiomes([]);
+    setSelectedBiomes([]);
     loadEvents();
+  };
+
+  const handleStartBroadcast = async () => {
+    soundEngine.playLevelUp();
+    const base = STARTERS_AND_POKEMON_DATABASE[broadcastSpeciesId] || STARTERS_AND_POKEMON_DATABASE[25];
+    const name = base?.displayName || `Pokémon #${broadcastSpeciesId}`;
+    await setBroadcastEncounter({
+      speciesId: broadcastSpeciesId,
+      speciesName: name,
+      level: broadcastLevel,
+      isShiny: broadcastShiny,
+      adminEmail: userCloudProfile.email,
+    });
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin iniciou transmissão global: ${name} Nv.${broadcastLevel}.`);
+    setMessage(`📡 Transmissão iniciada! O próximo encontro na Grama de todos os jogadores online será ${name} Nv.${broadcastLevel}${broadcastShiny ? ' ✨ Shiny' : ''}!`);
+  };
+
+  const handleClearBroadcast = async () => {
+    soundEngine.playFaint();
+    await clearBroadcastEncounter();
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin encerrou a transmissão global.`);
+    setMessage('🛑 Transmissão global cancelada com sucesso.');
   };
 
   const handleToggleEventActive = async (ev: GameEvent) => {
@@ -231,23 +279,33 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         <div className="flex gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-5">
           <button
             onClick={() => setActiveTab('resources')}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
               activeTab === 'resources'
                 ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Zap className="w-4 h-4" /> Recursos & Criação
+            <Zap className="w-4 h-4" /> Recursos
           </button>
           <button
             onClick={() => setActiveTab('events')}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
               activeTab === 'events'
                 ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-md shadow-purple-500/20'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Calendar className="w-4 h-4" /> Eventos & Modificadores
+            <Calendar className="w-4 h-4" /> Eventos
+          </button>
+          <button
+            onClick={() => setActiveTab('broadcast')}
+            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+              activeTab === 'broadcast'
+                ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-md shadow-rose-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Radio className="w-4 h-4" /> Encontro Global
           </button>
         </div>
 
@@ -561,6 +619,51 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       </select>
                     </div>
                   </div>
+
+                  {/* Area / Biome where this species boost specifically takes place */}
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[11px] font-bold text-purple-300 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-purple-400" /> Área / Bioma de Aparição desta Espécie:
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setBoostedSpeciesBiomes([])}
+                        className="text-[10px] text-purple-400 hover:underline"
+                      >
+                        {boostedSpeciesBiomes.length === 0 ? '✓ Todas as Áreas' : 'Limpar (Todas)'}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mb-2">
+                      Selecione os cenários onde este Pokémon aparecerá com a taxa aumentada (se vazio, aparece em todos):
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {BIOME_ROTATION_ORDER.map((bId) => {
+                        const biome = BIOMES[bId];
+                        const isSel = boostedSpeciesBiomes.includes(bId);
+                        return (
+                          <button
+                            key={`sp_biome_${bId}`}
+                            type="button"
+                            onClick={() => {
+                              if (boostedSpeciesBiomes.includes(bId)) {
+                                setBoostedSpeciesBiomes(boostedSpeciesBiomes.filter((x) => x !== bId));
+                              } else {
+                                setBoostedSpeciesBiomes([...boostedSpeciesBiomes, bId]);
+                              }
+                            }}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                              isSel
+                                ? 'bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm'
+                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {biome.name.split(' ')[0]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Biome Filter Selection */}
@@ -699,6 +802,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                 👑 Lendários
                               </span>
                             )}
+                            {ev.spawnBoosts && Object.keys(ev.spawnBoosts).length > 0 && (
+                              <span className="text-pink-400 font-bold bg-pink-950/40 px-1.5 py-0.5 rounded border border-pink-800/40">
+                                🎯 +Spawn #{Object.keys(ev.spawnBoosts)[0]} {ev.boostedSpeciesBiomes && ev.boostedSpeciesBiomes.length > 0 ? `(${ev.boostedSpeciesBiomes.length} biomas)` : '(Todos biomas)'}
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -725,6 +833,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                               setEventExpMult(ev.expMultiplier || 1);
                               setEventMoneyMult(ev.moneyMultiplier || 1);
                               setAllowRestrictedSpawns(!!ev.allowRestrictedSpawns);
+                              setSelectedBiomes(ev.targetBiomes || []);
+                              setBoostedSpeciesBiomes(ev.boostedSpeciesBiomes || []);
+                              if (ev.spawnBoosts && Object.keys(ev.spawnBoosts).length > 0) {
+                                const firstKey = Object.keys(ev.spawnBoosts)[0];
+                                setBoostedSpeciesId(Number(firstKey) || 25);
+                                setBoostPercentage(ev.spawnBoosts[firstKey] || 200);
+                              }
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
                             className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-colors"
@@ -746,6 +861,146 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Global Broadcast Next Wild Encounter Tab */}
+        {activeTab === 'broadcast' && (
+          <div className="space-y-5">
+            {/* Live Status Card */}
+            <div
+              className={`p-4 rounded-2xl border transition-all ${
+                currentBroadcast && currentBroadcast.active
+                  ? 'bg-gradient-to-r from-rose-950/80 via-slate-900 to-purple-950/80 border-rose-500/50 shadow-xl shadow-rose-950/30'
+                  : 'bg-slate-950 border-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                  <Radio
+                    className={`w-4 h-4 ${
+                      currentBroadcast?.active ? 'text-rose-400 animate-pulse' : 'text-slate-500'
+                    }`}
+                  />
+                  <span>Status da Transmissão Global</span>
+                </span>
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                    currentBroadcast?.active
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-400/40 animate-pulse'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  {currentBroadcast?.active ? 'AO VIVO • ATIVO NO SERVIDOR' : 'INATIVO'}
+                </span>
+              </div>
+
+              {currentBroadcast && currentBroadcast.active ? (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${
+                        currentBroadcast.isShiny ? 'shiny/' : ''
+                      }${currentBroadcast.speciesId}.png`}
+                      alt={currentBroadcast.speciesName}
+                      className="w-16 h-16 object-contain drop-shadow-lg"
+                    />
+                    <div>
+                      <div className="text-base font-black text-white flex items-center gap-2">
+                        <span>
+                          {currentBroadcast.isShiny
+                            ? `✨ ${currentBroadcast.speciesName}`
+                            : currentBroadcast.speciesName}
+                        </span>
+                        <span className="text-xs font-bold text-rose-400 bg-rose-950 px-2 py-0.5 rounded-lg border border-rose-800">
+                          Nv. {currentBroadcast.level}
+                        </span>
+                      </div>
+                      <p className="text-xs text-rose-200/90 mt-0.5">
+                        Transmitido por <strong className="font-mono text-white">{currentBroadcast.createdBy}</strong>
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        O próximo Pokémon selvagem na Grama de <strong>todos os jogadores conectados</strong> será este!
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleClearBroadcast}
+                    className="px-4 py-2 bg-slate-800 hover:bg-rose-900/60 text-rose-300 border border-rose-600/50 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" /> Cancelar Transmissão
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Nenhum encontro global está ativo no momento. Use o formulário abaixo para forçar o próximo encontro
+                  de todos os jogadores online.
+                </p>
+              )}
+            </div>
+
+            {/* Broadcast Form */}
+            <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                <Sparkles className="w-4 h-4 text-rose-400" />
+                <h4 className="font-bold text-sm text-white">Configurar Novo Encontro Global</h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Espécie do Pokémon:</label>
+                  <select
+                    value={broadcastSpeciesId}
+                    onChange={(e) => setBroadcastSpeciesId(Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+                  >
+                    {pokemonKeys.map((id) => (
+                      <option key={id} value={id}>
+                        #{id} - {STARTERS_AND_POKEMON_DATABASE[id]?.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Nível do Pokémon (1-100):</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={broadcastLevel}
+                    onChange={(e) =>
+                      setBroadcastLevel(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)))
+                    }
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={broadcastShiny}
+                    onChange={(e) => setBroadcastShiny(e.target.checked)}
+                    className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4"
+                  />
+                  <span>✨ Garantir Forma Shiny para Todos</span>
+                </label>
+                <span className="text-[11px] text-slate-400">
+                  {broadcastShiny ? 'Aparecerá com brilho e cores raras' : 'Aparência comum da espécie'}
+                </span>
+              </div>
+
+              <button
+                onClick={handleStartBroadcast}
+                className="w-full py-3 bg-gradient-to-r from-rose-600 via-pink-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-rose-950/50 transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Radio className="w-4 h-4" />
+                <span>📡 Transmitir Encontro para Todos os Jogadores Online</span>
+              </button>
             </div>
           </div>
         )}

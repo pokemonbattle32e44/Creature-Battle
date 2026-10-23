@@ -31,7 +31,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import firebaseConfigJson from '../../firebase-applet-config.json';
-import { PokemonInstance } from '../types/pokemon';
+import { PokemonInstance, GameEvent, BroadcastEncounter } from '../types/pokemon';
 
 // Initialize Firebase
 const firebaseConfig = {
@@ -287,7 +287,7 @@ export async function addSystemLog(type: string, participants: string[], detail:
 }
 
 // Admin Events Management System
-import { GameEvent } from '../types/pokemon';
+
 
 export async function fetchAllEvents(): Promise<GameEvent[]> {
   try {
@@ -351,4 +351,56 @@ export async function saveGameEvent(event: Partial<GameEvent>): Promise<string> 
 export async function deleteGameEvent(eventId: string): Promise<void> {
   const docRef = doc(db, 'events', eventId);
   await deleteDoc(docRef);
+}
+
+// Global Broadcast Encounter System (Admin transmits next wild encounter to all online players)
+export async function setBroadcastEncounter(broadcast: {
+  speciesId: number;
+  speciesName: string;
+  level: number;
+  isShiny: boolean;
+  adminEmail: string;
+}): Promise<void> {
+  const systemDocRef = doc(db, 'system', 'broadcast_encounter');
+  const payload: BroadcastEncounter = {
+    speciesId: broadcast.speciesId,
+    speciesName: broadcast.speciesName,
+    level: Math.max(1, Math.min(100, broadcast.level)),
+    isShiny: !!broadcast.isShiny,
+    active: true,
+    createdBy: broadcast.adminEmail,
+    createdAt: new Date().toISOString(),
+    broadcastNumber: Date.now(),
+  };
+  await setDoc(systemDocRef, sanitizeData(payload));
+}
+
+export async function clearBroadcastEncounter(): Promise<void> {
+  const systemDocRef = doc(db, 'system', 'broadcast_encounter');
+  await setDoc(systemDocRef, { active: false, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+export function subscribeToBroadcastEncounter(callback: (encounter: BroadcastEncounter | null) => void) {
+  try {
+    const docRef = doc(db, 'system', 'broadcast_encounter');
+    return onSnapshot(
+      docRef,
+      (snap) => {
+        if (!snap.exists()) {
+          callback(null);
+          return;
+        }
+        const data = snap.data() as BroadcastEncounter;
+        if (!data || !data.active) {
+          callback(null);
+          return;
+        }
+        callback({ ...data, id: snap.id });
+      },
+      (err) => console.warn('Broadcast encounter snapshot error:', err)
+    );
+  } catch (e) {
+    console.warn('Failed to subscribe to broadcast encounter:', e);
+    return () => {};
+  }
 }

@@ -16,7 +16,7 @@ import {
   Flame,
   Zap,
 } from 'lucide-react';
-import { PokemonInstance, Move, Item, StatusAilment, WeatherType, BiomeType } from '../types/pokemon';
+import { PokemonInstance, Move, Item, StatusAilment, WeatherType, BiomeType, GameEvent } from '../types/pokemon';
 import {
   calculateDamage,
   calculateCatchRate,
@@ -43,6 +43,7 @@ interface BattleViewProps {
   userInventory: Record<string, number>;
   currentBiome?: BiomeType;
   teraOrbCharged?: boolean;
+  activeEvents?: GameEvent[];
   onUseTeraOrb?: () => void;
   onUpdateTeam: (team: PokemonInstance[]) => void;
   onUpdateInventory: (inventory: Record<string, number>) => void;
@@ -56,6 +57,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
   userInventory,
   currentBiome = 'forest',
   teraOrbCharged = true,
+  activeEvents = [],
   onUseTeraOrb,
   onUpdateTeam,
   onUpdateInventory,
@@ -763,11 +765,32 @@ export const BattleView: React.FC<BattleViewProps> = ({
     soundEngine.playVictory();
     confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
 
-    // EXP Calculation
-    const expGained = Math.max(15, Math.floor((enemy.baseStats.hp * enemy.level) / 3));
-    const moneyGained = enemy.level * 150 + Math.floor(Math.random() * 50);
+    // EXP & Money Calculation with active events multiplier
+    let eventExpMult = 1.0;
+    let eventMoneyMult = 1.0;
+    for (const ev of activeEvents) {
+      if (ev.active && (!ev.targetBiomes || ev.targetBiomes.length === 0 || ev.targetBiomes.includes(currentBiome))) {
+        if (ev.expMultiplier && ev.expMultiplier > eventExpMult) {
+          eventExpMult = ev.expMultiplier;
+        }
+        if (ev.moneyMultiplier && ev.moneyMultiplier > eventMoneyMult) {
+          eventMoneyMult = ev.moneyMultiplier;
+        }
+      }
+    }
+
+    const baseExp = Math.max(15, Math.floor((enemy.baseStats.hp * enemy.level) / 3));
+    const expGained = Math.floor(baseExp * eventExpMult);
+    const baseMoney = enemy.level * 150 + Math.floor(Math.random() * 50);
+    const moneyGained = Math.floor(baseMoney * eventMoneyMult);
 
     addLog(`O ${enemy.displayName} selvagem desmaiou!`);
+    if (eventExpMult > 1) {
+      addLog(`⚡ BÔNUS DE EVENTO: Experiência multiplicada por ${eventExpMult}x!`);
+    }
+    if (eventMoneyMult > 1) {
+      addLog(`💰 BÔNUS DE EVENTO: Pokedólares multiplicados por ${eventMoneyMult}x!`);
+    }
     addLog(`${activePlayer.displayName} ganhou ${expGained} pontos de Experiência e ₽${moneyGained}!`);
 
     // Update active player's EXP
@@ -824,6 +847,32 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
     if (leveledUp) {
       soundEngine.playLevelUp();
+    }
+
+    // Wild Item Drop with event multiplier
+    let eventItemDropMult = 1.0;
+    for (const ev of activeEvents) {
+      if (ev.active && (!ev.targetBiomes || ev.targetBiomes.length === 0 || ev.targetBiomes.includes(currentBiome))) {
+        if (ev.itemDropMultiplier && ev.itemDropMultiplier > eventItemDropMult) {
+          eventItemDropMult = ev.itemDropMultiplier;
+        }
+      }
+    }
+    const baseDropChance = 0.25;
+    if (Math.random() < Math.min(0.85, baseDropChance * eventItemDropMult)) {
+      const dropPool = ['poke_ball', 'great_ball', 'potion', 'super_potion', 'revive', 'rare_candy'];
+      const chosenItem = dropPool[Math.floor(Math.random() * dropPool.length)];
+      const updatedInv = { ...userInventory, [chosenItem]: (userInventory[chosenItem] || 0) + 1 };
+      onUpdateInventory(updatedInv);
+      const itemNamePt: Record<string, string> = {
+        poke_ball: 'Poké Bola',
+        great_ball: 'Grande Bola',
+        potion: 'Poção',
+        super_potion: 'Super Poção',
+        revive: 'Reviver',
+        rare_candy: 'Doce Raro',
+      };
+      addLog(`🎁 O Pokémon selvagem derrubou 1x ${itemNamePt[chosenItem] || chosenItem}!`);
     }
 
     updatedTeam[activePlayerIndex] = player;
@@ -940,6 +989,16 @@ export const BattleView: React.FC<BattleViewProps> = ({
       confetti({ particleCount: 100, spread: 80, origin: { y: 0.5 } });
       addLog(`¡GOTCHA! O ${enemy.displayName} foi capturado com sucesso!`);
 
+      let eventMoneyMult = 1.0;
+      for (const ev of activeEvents) {
+        if (ev.active && (!ev.targetBiomes || ev.targetBiomes.length === 0 || ev.targetBiomes.includes(currentBiome))) {
+          if (ev.moneyMultiplier && ev.moneyMultiplier > eventMoneyMult) {
+            eventMoneyMult = ev.moneyMultiplier;
+          }
+        }
+      }
+      const catchPrize = Math.floor(100 * eventMoneyMult);
+
       const finalCleanTeam = team.map((p) => {
         let cleaned = p;
         if (cleaned.isMega) cleaned = revertMegaEvolution(cleaned);
@@ -948,7 +1007,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
       });
 
       await delay(1500);
-      onWinBattle(finalCleanTeam, 100, enemy);
+      onWinBattle(finalCleanTeam, catchPrize, enemy);
     } else {
       addLog(`Ah não! O ${enemy.displayName} escapou da Poké Bola!`);
       await delay(1000);

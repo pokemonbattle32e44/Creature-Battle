@@ -18,9 +18,10 @@ import { AdminPanelModal } from './components/AdminPanelModal';
 import { TradeView } from './components/TradeView';
 import { MultiplayerPvPView } from './components/MultiplayerPvPView';
 
-import { PokemonBaseData, PokemonInstance, UserSaveData, BiomeType, GameEvent } from './types/pokemon';
+import { PokemonBaseData, PokemonInstance, UserSaveData, BiomeType, GameEvent, BroadcastEncounter } from './types/pokemon';
 import { createPokemonInstance, normalizePokemonInstance, ensureUniquePokemonInstances } from './utils/pokemonCalc';
 import { generateWildEncounter } from './utils/encounterGenerator';
+import { fetchPokemonData } from './utils/apiFetcher';
 import { STARTERS_AND_POKEMON_DATABASE } from './data/startersAndPokemon';
 import { getNextBiome } from './data/environments';
 import { soundEngine } from './utils/soundEngine';
@@ -30,6 +31,7 @@ import {
   syncUserToCloud,
   checkIsAdmin,
   subscribeToEvents,
+  subscribeToBroadcastEncounter,
   UserCloudData,
 } from './utils/firebase';
 
@@ -65,12 +67,14 @@ export default function App() {
   const [pokedexCaught, setPokedexCaught] = useState<number[]>([]);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  // Rotating Biomes, Tera Orb and Event States
+  // Rotating Biomes (25 battles per rotation), Tera Orb and Event States
   const [currentBiome, setCurrentBiome] = useState<BiomeType>('forest');
   const [battleCountInBiome, setBattleCountInBiome] = useState<number>(0);
-  const [battlesPerRotation] = useState<number>(5);
+  const [battlesPerRotation, setBattlesPerRotation] = useState<number>(25);
   const [teraOrbCharged, setTeraOrbCharged] = useState<boolean>(true);
   const [eventsList, setEventsList] = useState<GameEvent[]>([]);
+  const [broadcastEncounter, setBroadcastEncounter] = useState<BroadcastEncounter | null>(null);
+  const [consumedBroadcastNumber, setConsumedBroadcastNumber] = useState<number | null>(null);
 
   // Active battle state
   const [wildPokemon, setWildPokemon] = useState<PokemonInstance | null>(null);
@@ -179,12 +183,18 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeIncense]);
 
-  // Subscribe to Live Game Events from Server/Firestore
+  // Subscribe to Live Game Events & Broadcast Encounters from Server/Firestore
   useEffect(() => {
-    const unsub = subscribeToEvents((events) => {
+    const unsubEvents = subscribeToEvents((events) => {
       setEventsList(events);
     });
-    return () => unsub();
+    const unsubBroadcast = subscribeToBroadcastEncounter((bc) => {
+      setBroadcastEncounter(bc);
+    });
+    return () => {
+      unsubEvents();
+      unsubBroadcast();
+    };
   }, []);
 
   // Load saved game on startup
@@ -204,6 +214,8 @@ export default function App() {
           setPokemonCaught(parsed.pokemonCaught || parsed.party.length);
           if (parsed.currentBiome) setCurrentBiome(parsed.currentBiome);
           if (typeof parsed.battleCountInBiome === 'number') setBattleCountInBiome(parsed.battleCountInBiome);
+          if (typeof parsed.battlesPerRotation === 'number') setBattlesPerRotation(parsed.battlesPerRotation);
+          else setBattlesPerRotation(25);
           if (typeof parsed.teraOrbCharged === 'boolean') setTeraOrbCharged(parsed.teraOrbCharged);
           
           const partyPokedexIds = parsed.party.map((p) => p.pokedexId);
@@ -213,6 +225,12 @@ export default function App() {
           setPokedexSeen(initialSeen);
           setPokedexCaught(initialCaught);
           setLastSavedAt(parsed.lastSavedAt || null);
+
+          const savedConsumedBc = localStorage.getItem('CONSUMED_BROADCAST_NUM');
+          if (savedConsumedBc) {
+            setConsumedBroadcastNumber(Number(savedConsumedBc));
+          }
+
           setCurrentView('main');
         }
       }
@@ -259,6 +277,7 @@ export default function App() {
       pokedexCaught,
       currentBiome,
       battleCountInBiome,
+      battlesPerRotation,
       teraOrbCharged,
       lastSavedAt: timestamp,
     };
@@ -268,6 +287,7 @@ export default function App() {
 
   const handleResetGame = () => {
     localStorage.removeItem(SAVE_KEY);
+    localStorage.removeItem('CONSUMED_BROADCAST_NUM');
     setPlayerTeam([]);
     setPokedollars(1000);
     setUserInventory({ poke_ball: 5, potion: 3 });
@@ -277,6 +297,7 @@ export default function App() {
     setPokedexCaught([]);
     setCurrentBiome('forest');
     setBattleCountInBiome(0);
+    setBattlesPerRotation(25);
     setTeraOrbCharged(true);
     setLastSavedAt(null);
     setCurrentView('starter_select');
@@ -346,6 +367,33 @@ export default function App() {
     const lead = playerTeam[0];
     const baseLevel = lead ? lead.level : 1;
 
+    // Check if an active global admin broadcast encounter is waiting
+    if (
+      broadcastEncounter &&
+      broadcastEncounter.active &&
+      broadcastEncounter.broadcastNumber !== consumedBroadcastNumber
+    ) {
+      let baseData = await fetchPokemonData(broadcastEncounter.speciesId);
+      if (!baseData) {
+        baseData = (await fetchPokemonData(25))!;
+      }
+      const broadcastInstance = createPokemonInstance(
+        baseData,
+        broadcastEncounter.level,
+        broadcastEncounter.isShiny
+      );
+      setConsumedBroadcastNumber(broadcastEncounter.broadcastNumber);
+      localStorage.setItem('CONSUMED_BROADCAST_NUM', String(broadcastEncounter.broadcastNumber));
+
+      if (!pokedexSeen.includes(broadcastInstance.pokedexId)) {
+        setPokedexSeen((prev) => [...prev, broadcastInstance.pokedexId]);
+      }
+
+      setWildPokemon(broadcastInstance);
+      setCurrentView('grass');
+      return;
+    }
+
     const { wildInstance } = await generateWildEncounter(
       baseLevel,
       activeIncense,
@@ -364,17 +412,7 @@ export default function App() {
 
   // Handle Win Battle
   const handleWinBattle = (finalTeam: PokemonInstance[], moneyGained: number, caughtPokemon?: PokemonInstance) => {
-    // Apply active events money multiplier
-    let eventMoneyMult = 1.0;
-    for (const ev of eventsList) {
-      if (ev.active && (!ev.targetBiomes || ev.targetBiomes.length === 0 || ev.targetBiomes.includes(currentBiome))) {
-        if (ev.moneyMultiplier && ev.moneyMultiplier > eventMoneyMult) {
-          eventMoneyMult = ev.moneyMultiplier;
-        }
-      }
-    }
-    const finalMoneyGained = Math.floor(moneyGained * eventMoneyMult);
-    const updatedPokedollars = pokedollars + finalMoneyGained;
+    const updatedPokedollars = pokedollars + moneyGained;
     const updatedBattlesWon = battlesWon + 1;
     const updatedCaughtCount = pokemonCaught + (caughtPokemon ? 1 : 0);
 
@@ -575,6 +613,7 @@ export default function App() {
           userInventory={userInventory}
           currentBiome={currentBiome}
           teraOrbCharged={teraOrbCharged}
+          activeEvents={eventsList}
           onUseTeraOrb={() => {
             setTeraOrbCharged(false);
             handleSaveGame();
