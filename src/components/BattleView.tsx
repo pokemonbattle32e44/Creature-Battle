@@ -125,7 +125,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
       addLog(`Um ${enemy.displayName} selvagem de Nível ${enemy.level} apareceu!`);
     }
 
-    if (enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost) {
+    if (enemy.pokedexId === 9999 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost) {
       soundEngine.playGlitchSound();
       addLog(`👻 O terrível GHOST manifestou-se! Ele roubou 2 ataques de ${activePlayer.displayName}!`);
       if (activePlayer.moves.length > 0) {
@@ -351,13 +351,13 @@ export const BattleView: React.FC<BattleViewProps> = ({
     addLog(`👻 A ILUSÃO FOI DESTRUÍDA! O VERDADEIRO GHOST DAS LENDAS SE REVELOU!`);
     await delay(1500);
 
-    const ghostBase = STARTERS_AND_POKEMON_DATABASE[666];
+    const ghostBase = STARTERS_AND_POKEMON_DATABASE[9999] || STARTERS_AND_POKEMON_DATABASE[666];
     const trueGhost = createPokemonInstance(ghostBase, 100);
     trueGhost.isBossGhost = true;
     trueGhost.displayName = 'GHOST (Lenda Sombria)';
     setEnemy(trueGhost);
     setIsRevealingBoss(null);
-    soundEngine.playCry(666);
+    soundEngine.playCry(9999);
     addLog(`👁️ PREPARE-SE! O GHOST não pode ser derrotado normalmente e só pode ser capturado com a MASTER BOLA!`);
     setIsAnimating(false);
   };
@@ -1065,7 +1065,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
     }
 
     const isMissingNo = enemy.pokedexId === 0 || enemy.name.toLowerCase() === 'missingno' || enemy.isBossMissingNo;
-    const isGhostBoss = enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost;
+    const isGhostBoss = enemy.pokedexId === 9999 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost;
 
     if (isMissingNo && ballItemId !== 'master_ball') {
       addLog(`Você arremessou a Pokébola...`);
@@ -1157,7 +1157,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
     const switched = team[idx];
     addLog(`Vai, ${switched.displayName}! Assuma a batalha!`);
 
-    if (enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost') {
+    if (enemy.pokedexId === 9999 || enemy.name.toLowerCase() === 'ghost') {
       addLog(`👻 GHOST roubou 2 ataques de ${switched.displayName}!`);
       soundEngine.playGlitchSound();
       if (switched.moves.length > 0) {
@@ -1304,7 +1304,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
               } ${
                 enemy.pokedexId === 0 || enemy.name.toLowerCase() === 'missingno' || enemy.isBossMissingNo ? 'missingno-pixel-glitch' : ''
               } ${
-                enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost ? 'ghost-aura' : ''
+                enemy.pokedexId === 9999 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost ? 'ghost-aura' : ''
               } ${enemy.isTerastallized ? 'drop-shadow-[0_0_15px_rgba(56,189,248,0.7)]' : ''}`}
             />
           </div>
@@ -1371,7 +1371,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
               } ${isPlayerGlitched ? 'missingno-glitch-victim' : ''} ${
                 activePlayer.pokedexId === 0 || activePlayer.name.toLowerCase() === 'missingno' ? 'missingno-pixel-glitch' : ''
               } ${
-                activePlayer.pokedexId === 666 || activePlayer.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
+                activePlayer.pokedexId === 9999 || activePlayer.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
               } ${isTeraShining || activePlayer.isTerastallized ? 'drop-shadow-[0_0_20px_rgba(56,189,248,0.8)] filter brightness-110' : ''} ${
                 isMegaAura || activePlayer.isMega ? 'drop-shadow-[0_0_20px_rgba(236,72,153,0.8)] filter contrast-110' : ''
               }`}

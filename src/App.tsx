@@ -17,8 +17,20 @@ import { LeaderboardModal } from './components/LeaderboardModal';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { TradeView } from './components/TradeView';
 import { MultiplayerPvPView } from './components/MultiplayerPvPView';
+import { BattlePassModal } from './components/BattlePassModal';
+import { MissionsModal, DEFAULT_MISSIONS } from './components/MissionsModal';
+import { SettingsModal } from './components/SettingsModal';
 
-import { PokemonBaseData, PokemonInstance, UserSaveData, BiomeType, GameEvent, BroadcastEncounter } from './types/pokemon';
+import {
+  PokemonBaseData,
+  PokemonInstance,
+  UserSaveData,
+  BiomeType,
+  GameEvent,
+  BroadcastEncounter,
+  GameMission,
+  formatPokedexId,
+} from './types/pokemon';
 import { createPokemonInstance, normalizePokemonInstance, ensureUniquePokemonInstances } from './utils/pokemonCalc';
 import { generateWildEncounter } from './utils/encounterGenerator';
 import { fetchPokemonData } from './utils/apiFetcher';
@@ -32,6 +44,8 @@ import {
   checkIsAdmin,
   subscribeToEvents,
   subscribeToBroadcastEncounter,
+  updateUserPresence,
+  subscribeMissions,
   UserCloudData,
 } from './utils/firebase';
 
@@ -94,6 +108,22 @@ export default function App() {
   const [isFriendsOpen, setIsFriendsOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [isBattlePassOpen, setIsBattlePassOpen] = useState(false);
+  const [isMissionsOpen, setIsMissionsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Battle Pass & Missions State
+  const [battlePassXp, setBattlePassXp] = useState<number>(0);
+  const [claimedBattlePassTiers, setClaimedBattlePassTiers] = useState<number[]>([]);
+  const [missionsList, setMissionsList] = useState<GameMission[]>([]);
+  const [missionProgress, setMissionProgress] = useState<
+    Record<string, { current: number; completed: boolean; claimed: boolean }>
+  >({});
+
+  // Theme State (Dark / Light)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('arena_theme') as 'dark' | 'light') || 'dark';
+  });
 
   // Listen to Firebase Auth
   useEffect(() => {
@@ -183,7 +213,37 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeIncense]);
 
-  // Subscribe to Live Game Events & Broadcast Encounters from Server/Firestore
+  // Theme Toggle Effect
+  useEffect(() => {
+    localStorage.setItem('arena_theme', theme);
+    if (theme === 'light') {
+      document.documentElement.classList.add('light-mode');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+    }
+  }, [theme]);
+
+  // Online Presence Heartbeat (Every 30s)
+  useEffect(() => {
+    if (!currentUser && !userCloudProfile) return;
+    const uid = userCloudProfile?.uid || currentUser?.uid;
+    const nickname = userCloudProfile?.nickname || currentUser?.displayName || 'Treinador';
+    const email = userCloudProfile?.email || currentUser?.email;
+
+    if (uid) {
+      updateUserPresence({ uid, nickname, email });
+    }
+
+    const interval = setInterval(() => {
+      if (uid) {
+        updateUserPresence({ uid, nickname, email });
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [currentUser, userCloudProfile?.uid, userCloudProfile?.nickname]);
+
+  // Subscribe to Live Game Events, Broadcast Encounters, and Missions
   useEffect(() => {
     const unsubEvents = subscribeToEvents((events) => {
       setEventsList(events);
@@ -191,9 +251,13 @@ export default function App() {
     const unsubBroadcast = subscribeToBroadcastEncounter((bc) => {
       setBroadcastEncounter(bc);
     });
+    const unsubMissions = subscribeMissions((missions) => {
+      setMissionsList(missions);
+    });
     return () => {
       unsubEvents();
       unsubBroadcast();
+      unsubMissions();
     };
   }, []);
 
@@ -217,6 +281,10 @@ export default function App() {
           if (typeof parsed.battlesPerRotation === 'number') setBattlesPerRotation(parsed.battlesPerRotation);
           else setBattlesPerRotation(25);
           if (typeof parsed.teraOrbCharged === 'boolean') setTeraOrbCharged(parsed.teraOrbCharged);
+
+          if (typeof parsed.battlePassXp === 'number') setBattlePassXp(parsed.battlePassXp);
+          if (Array.isArray(parsed.claimedBattlePassTiers)) setClaimedBattlePassTiers(parsed.claimedBattlePassTiers);
+          if (parsed.missionProgress) setMissionProgress(parsed.missionProgress);
           
           const partyPokedexIds = parsed.party.map((p) => p.pokedexId);
           const initialSeen = Array.from(new Set([...(parsed.pokedexSeen || []), ...partyPokedexIds]));
@@ -261,6 +329,26 @@ export default function App() {
     }
   };
 
+  // Mission progress helper
+  const updateMissionGoal = (type: 'win_battles' | 'catch_pokemon' | 'super_effective', amount = 1) => {
+    setMissionProgress((prev) => {
+      const next = { ...prev };
+      const allMissions = missionsList.length > 0 ? missionsList : DEFAULT_MISSIONS;
+      for (const m of allMissions) {
+        if (!m.active || m.targetType !== type) continue;
+        const currentProg = next[m.id] || { current: 0, completed: false, claimed: false };
+        if (currentProg.claimed) continue;
+        const newCount = currentProg.current + amount;
+        next[m.id] = {
+          current: newCount,
+          completed: newCount >= m.targetValue,
+          claimed: false,
+        };
+      }
+      return next;
+    });
+  };
+
   // Save game helper
   const handleSaveGame = () => {
     const timestamp = new Date().toISOString();
@@ -279,6 +367,9 @@ export default function App() {
       battleCountInBiome,
       battlesPerRotation,
       teraOrbCharged,
+      battlePassXp,
+      claimedBattlePassTiers,
+      missionProgress,
       lastSavedAt: timestamp,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
@@ -299,6 +390,9 @@ export default function App() {
     setBattleCountInBiome(0);
     setBattlesPerRotation(25);
     setTeraOrbCharged(true);
+    setBattlePassXp(0);
+    setClaimedBattlePassTiers([]);
+    setMissionProgress({});
     setLastSavedAt(null);
     setCurrentView('starter_select');
   };
@@ -351,11 +445,11 @@ export default function App() {
   };
 
   const handleStartGhostBattle = () => {
-    const ghostBase = STARTERS_AND_POKEMON_DATABASE[666];
+    const ghostBase = STARTERS_AND_POKEMON_DATABASE[9999] || STARTERS_AND_POKEMON_DATABASE[666];
     if (ghostBase) {
       const ghostInstance = createPokemonInstance(ghostBase, 100);
-      if (!pokedexSeen.includes(666)) {
-        setPokedexSeen((prev) => [...prev, 666]);
+      if (!pokedexSeen.includes(9999)) {
+        setPokedexSeen((prev) => [...prev, 9999]);
       }
       setWildPokemon(ghostInstance);
       setCurrentView('grass');
@@ -373,25 +467,34 @@ export default function App() {
       broadcastEncounter.active &&
       broadcastEncounter.broadcastNumber !== consumedBroadcastNumber
     ) {
-      let baseData = await fetchPokemonData(broadcastEncounter.speciesId);
-      if (!baseData) {
-        baseData = (await fetchPokemonData(25))!;
-      }
-      const broadcastInstance = createPokemonInstance(
-        baseData,
-        broadcastEncounter.level,
-        broadcastEncounter.isShiny
-      );
-      setConsumedBroadcastNumber(broadcastEncounter.broadcastNumber);
-      localStorage.setItem('CONSUMED_BROADCAST_NUM', String(broadcastEncounter.broadcastNumber));
+      const isTargeted =
+        Array.isArray(broadcastEncounter.targetPlayerIds) &&
+        broadcastEncounter.targetPlayerIds.length > 0;
+      const uid = userCloudProfile?.uid || currentUser?.uid;
+      const isForMe = !isTargeted || (uid && broadcastEncounter.targetPlayerIds!.includes(uid)) || isAdmin;
 
-      if (!pokedexSeen.includes(broadcastInstance.pokedexId)) {
-        setPokedexSeen((prev) => [...prev, broadcastInstance.pokedexId]);
-      }
+      if (isForMe) {
+        let baseData =
+          (await fetchPokemonData(broadcastEncounter.speciesId)) ||
+          STARTERS_AND_POKEMON_DATABASE[broadcastEncounter.speciesId] ||
+          STARTERS_AND_POKEMON_DATABASE[25];
 
-      setWildPokemon(broadcastInstance);
-      setCurrentView('grass');
-      return;
+        const broadcastInstance = createPokemonInstance(
+          baseData,
+          broadcastEncounter.level,
+          broadcastEncounter.isShiny
+        );
+        setConsumedBroadcastNumber(broadcastEncounter.broadcastNumber);
+        localStorage.setItem('CONSUMED_BROADCAST_NUM', String(broadcastEncounter.broadcastNumber));
+
+        if (!pokedexSeen.includes(broadcastInstance.pokedexId)) {
+          setPokedexSeen((prev) => [...prev, broadcastInstance.pokedexId]);
+        }
+
+        setWildPokemon(broadcastInstance);
+        setCurrentView('grass');
+        return;
+      }
     }
 
     const { wildInstance } = await generateWildEncounter(
@@ -415,6 +518,17 @@ export default function App() {
     const updatedPokedollars = pokedollars + moneyGained;
     const updatedBattlesWon = battlesWon + 1;
     const updatedCaughtCount = pokemonCaught + (caughtPokemon ? 1 : 0);
+
+    // Battle Pass XP Gain: +100 per win, +50 bonus if caught
+    const bpXpEarned = 100 + (caughtPokemon ? 50 : 0);
+    const updatedBpXp = battlePassXp + bpXpEarned;
+    setBattlePassXp(updatedBpXp);
+
+    // Update Missions progress
+    updateMissionGoal('win_battles', 1);
+    if (caughtPokemon) {
+      updateMissionGoal('catch_pokemon', 1);
+    }
 
     // Biome rotation check
     const newBiomeCount = battleCountInBiome + 1;
@@ -462,6 +576,9 @@ export default function App() {
         pokedexCount: newCaught.length,
         pokedexCaught: newCaught,
         pokedexSeen: newSeen,
+        battlePassXp: updatedBpXp,
+        claimedBattlePassTiers,
+        missionProgress,
       };
       setUserCloudProfile(updatedProfile);
       syncUserToCloud(updatedProfile);
@@ -490,11 +607,153 @@ export default function App() {
       pokedexCaught: newCaught,
       currentBiome: nextBiome,
       battleCountInBiome: nextCount,
+      battlesPerRotation,
       teraOrbCharged,
+      battlePassXp: updatedBpXp,
+      claimedBattlePassTiers,
+      missionProgress,
       lastSavedAt: timestamp,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
     setLastSavedAt(timestamp);
+  };
+
+  // Claim Battle Pass Tier Handler
+  const handleClaimBattlePassTier = (
+    tierNum: number,
+    rewards: {
+      items?: Record<string, number>;
+      money?: number;
+      pikachuInstance?: PokemonInstance;
+    }
+  ) => {
+    const nextClaimed = [...claimedBattlePassTiers, tierNum];
+    setClaimedBattlePassTiers(nextClaimed);
+
+    let nextMoney = pokedollars;
+    if (rewards.money) {
+      nextMoney += rewards.money;
+      setPokedollars(nextMoney);
+    }
+
+    let nextInventory = { ...userInventory };
+    if (rewards.items) {
+      for (const [k, q] of Object.entries(rewards.items)) {
+        nextInventory[k] = (nextInventory[k] || 0) + q;
+      }
+      setUserInventory(nextInventory);
+    }
+
+    let nextTeam = [...playerTeam];
+    let nextBox = [...pcBox];
+    let nextCaught = [...pokedexCaught];
+    let nextSeen = [...pokedexSeen];
+
+    if (rewards.pikachuInstance) {
+      const pika = rewards.pikachuInstance;
+      if (nextTeam.length < 6) {
+        nextTeam.push(pika);
+        setPlayerTeam(nextTeam);
+      } else {
+        nextBox.push(pika);
+        setPcBox(nextBox);
+      }
+      if (!nextCaught.includes(pika.pokedexId)) nextCaught.push(pika.pokedexId);
+      if (!nextSeen.includes(pika.pokedexId)) nextSeen.push(pika.pokedexId);
+      setPokedexCaught(nextCaught);
+      setPokedexSeen(nextSeen);
+    }
+
+    if (userCloudProfile) {
+      const updatedProfile: UserCloudData = {
+        ...userCloudProfile,
+        money: nextMoney,
+        inventory: nextInventory,
+        team: nextTeam,
+        pcBox: nextBox,
+        claimedBattlePassTiers: nextClaimed,
+      };
+      setUserCloudProfile(updatedProfile);
+      syncUserToCloud(updatedProfile);
+    }
+
+    handleSaveGame();
+  };
+
+  // Claim Mission Handler
+  const handleClaimMission = (
+    mission: GameMission,
+    rewards: {
+      xp?: number;
+      balls?: Record<string, number>;
+      money?: number;
+      pokemonInstance?: PokemonInstance;
+    }
+  ) => {
+    const nextProgress = {
+      ...missionProgress,
+      [mission.id]: {
+        ...(missionProgress[mission.id] || { current: mission.targetValue, completed: true }),
+        claimed: true,
+      },
+    };
+    setMissionProgress(nextProgress);
+
+    let nextBpXp = battlePassXp;
+    if (rewards.xp) {
+      nextBpXp += rewards.xp;
+      setBattlePassXp(nextBpXp);
+    }
+
+    let nextMoney = pokedollars;
+    if (rewards.money) {
+      nextMoney += rewards.money;
+      setPokedollars(nextMoney);
+    }
+
+    let nextInventory = { ...userInventory };
+    if (rewards.balls) {
+      for (const [k, q] of Object.entries(rewards.balls)) {
+        nextInventory[k] = (nextInventory[k] || 0) + q;
+      }
+      setUserInventory(nextInventory);
+    }
+
+    let nextTeam = [...playerTeam];
+    let nextBox = [...pcBox];
+    let nextCaught = [...pokedexCaught];
+    let nextSeen = [...pokedexSeen];
+
+    if (rewards.pokemonInstance) {
+      const pkmn = rewards.pokemonInstance;
+      if (nextTeam.length < 6) {
+        nextTeam.push(pkmn);
+        setPlayerTeam(nextTeam);
+      } else {
+        nextBox.push(pkmn);
+        setPcBox(nextBox);
+      }
+      if (!nextCaught.includes(pkmn.pokedexId)) nextCaught.push(pkmn.pokedexId);
+      if (!nextSeen.includes(pkmn.pokedexId)) nextSeen.push(pkmn.pokedexId);
+      setPokedexCaught(nextCaught);
+      setPokedexSeen(nextSeen);
+    }
+
+    if (userCloudProfile) {
+      const updatedProfile: UserCloudData = {
+        ...userCloudProfile,
+        money: nextMoney,
+        inventory: nextInventory,
+        team: nextTeam,
+        pcBox: nextBox,
+        battlePassXp: nextBpXp,
+        missionProgress: nextProgress,
+      };
+      setUserCloudProfile(updatedProfile);
+      syncUserToCloud(updatedProfile);
+    }
+
+    handleSaveGame();
   };
 
   const handleCompleteEvolution = (evolvedPokemon: PokemonInstance) => {
@@ -557,7 +816,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+    <div className={`min-h-screen bg-slate-950 text-slate-100 font-sans antialiased ${theme === 'light' ? 'light-mode' : ''}`}>
       
       {/* Starter Select Screen */}
       {currentView === 'starter_select' && (
@@ -600,6 +859,9 @@ export default function App() {
           onOpenFriends={() => setIsFriendsOpen(true)}
           onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
           onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+          onOpenBattlePass={() => setIsBattlePassOpen(true)}
+          onOpenMissions={() => setIsMissionsOpen(true)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           battlesWon={battlesWon}
           pokemonCaught={pokemonCaught}
         />
@@ -796,6 +1058,48 @@ export default function App() {
             if (typeof updated.money === 'number') setPokedollars(updated.money);
           }}
           onClose={() => setIsAdminPanelOpen(false)}
+        />
+      )}
+
+      {/* Battle Pass Modal */}
+      {isBattlePassOpen && (
+        <BattlePassModal
+          currentXp={battlePassXp}
+          claimedTiers={claimedBattlePassTiers}
+          onClaimTier={handleClaimBattlePassTier}
+          onStartSpecialEncounter={(wildInstance) => {
+            setIsBattlePassOpen(false);
+            setWildPokemon(wildInstance);
+            setCurrentView('grass');
+          }}
+          onClose={() => setIsBattlePassOpen(false)}
+        />
+      )}
+
+      {/* Missions Modal */}
+      {isMissionsOpen && (
+        <MissionsModal
+          missions={missionsList.length > 0 ? missionsList : DEFAULT_MISSIONS}
+          missionProgress={missionProgress}
+          onClaimMission={handleClaimMission}
+          onStartSpecialEncounter={(instance) => {
+            setIsMissionsOpen(false);
+            setWildPokemon(instance);
+            setCurrentView('grass');
+          }}
+          onClose={() => setIsMissionsOpen(false)}
+        />
+      )}
+
+      {/* Settings Modal (Modo Claro & Áudio) */}
+      {isSettingsOpen && (
+        <SettingsModal
+          theme={theme}
+          onToggleTheme={(newTheme) => {
+            setTheme(newTheme);
+            localStorage.setItem('arena_theme', newTheme);
+          }}
+          onClose={() => setIsSettingsOpen(false)}
         />
       )}
 

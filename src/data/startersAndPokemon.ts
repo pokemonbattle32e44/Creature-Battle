@@ -8,8 +8,8 @@ export const GHOST_SPRITE = GHOST_FRONT_SPRITE;
 export function getPokemonSpriteStyle(pkmn?: { pokedexId?: number; id?: number; name?: string; isShiny?: boolean }) {
   if (!pkmn) return {};
   const id = pkmn.pokedexId ?? pkmn.id;
-  const isGhost = id === 666 || pkmn.name === 'ghost';
-  const isMissingno = id === 0 || pkmn.name === 'missingno';
+  const isGhost = id === 9999 || pkmn.name?.toLowerCase() === 'ghost';
+  const isMissingno = id === 0 || pkmn.name?.toLowerCase() === 'missingno';
 
   if (pkmn.isShiny) {
     if (isGhost) {
@@ -25,7 +25,7 @@ export function getPokemonSpriteStyle(pkmn?: { pokedexId?: number; id?: number; 
 
 // High quality sprite builder helpers using official PokeAPI / Showdown CDN
 export function getSpriteUrls(id: number, name: string, isShiny: boolean = false) {
-  if (id === 0 || name === 'missingno') {
+  if (id === 0 || name?.toLowerCase() === 'missingno') {
     const missingnoFront = MISSINGNO_SPRITE;
     return {
       front: missingnoFront,
@@ -35,7 +35,7 @@ export function getSpriteUrls(id: number, name: string, isShiny: boolean = false
       artwork: missingnoFront,
     };
   }
-  if (id === 666 || name === 'ghost') {
+  if (id === 9999 || name?.toLowerCase() === 'ghost') {
     const ghostFront = GHOST_FRONT_SPRITE;
     const ghostBack = GHOST_BACK_SPRITE;
     return {
@@ -81,9 +81,9 @@ export const STARTERS_AND_POKEMON_DATABASE: Record<number, PokemonBaseData> = {
     catchRate: 0,
   },
 
-  // Boss GHOST
-  666: {
-    id: 666,
+  // Boss GHOST (#???, id: 9999)
+  9999: {
+    id: 9999,
     name: 'ghost',
     displayName: 'GHOST',
     types: ['ghost', 'dark'],
@@ -103,6 +103,28 @@ export const STARTERS_AND_POKEMON_DATABASE: Record<number, PokemonBaseData> = {
     learnableTms: [],
     baseExp: 300,
     catchRate: 10,
+  },
+
+  // Official #666 Vivillon
+  666: {
+    id: 666,
+    name: 'vivillon',
+    displayName: 'Vivillon',
+    types: ['bug', 'flying'],
+    baseStats: { hp: 80, atk: 52, def: 50, spAtk: 90, spDef: 50, spd: 89 },
+    sprites: getSpriteUrls(666, 'vivillon'),
+    abilities: ['Shield Dust', 'Compound Eyes', 'Friend Guard'],
+    isStage1Basic: false,
+    isRestricted: false,
+    isFinalEvolution: true,
+    levelUpMoves: [
+      { level: 1, moveId: 'gust' },
+      { level: 12, moveId: 'sleep_powder' },
+      { level: 25, moveId: 'air_slash' },
+      { level: 35, moveId: 'bug_buzz' },
+    ],
+    baseExp: 185,
+    catchRate: 45,
   },
 
   // Gen 1 Starters

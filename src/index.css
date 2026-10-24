@@ -195,4 +195,50 @@
   animation: bossMissingNoReveal 0.2s steps(2) infinite;
 }
 
+/* Light Mode Overrides */
+.light-mode {
+  color-scheme: light;
+}
+
+.light-mode body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.light-mode .bg-slate-950 {
+  background-color: #f8fafc !important;
+}
+
+.light-mode .bg-slate-900 {
+  background-color: #ffffff !important;
+}
+
+.light-mode .bg-slate-800 {
+  background-color: #e2e8f0 !important;
+}
+
+.light-mode .bg-slate-800\/80 {
+  background-color: rgba(226, 232, 240, 0.9) !important;
+}
+
+.light-mode .border-slate-800,
+.light-mode .border-slate-700 {
+  border-color: #cbd5e1 !important;
+}
+
+.light-mode .text-slate-100,
+.light-mode .text-white {
+  color: #0f172a !important;
+}
+
+.light-mode .text-slate-300,
+.light-mode .text-slate-400 {
+  color: #475569 !important;
+}
+
+.light-mode .text-slate-500 {
+  color: #64748b !important;
+}
+
+
 

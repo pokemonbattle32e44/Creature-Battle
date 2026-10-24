@@ -334,6 +334,31 @@ class SoundEngine {
     osc.stop(this.ctx.currentTime + 0.4);
   }
 
+  public playShinyAppear() {
+    if (!this.soundEnabled) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    // Sparkling high-pitched arpeggio
+    const sparkles = [1046.5, 1318.51, 1567.98, 2093.0, 2637.02]; // C6, E6, G6, C7, E7
+    sparkles.forEach((freq, idx) => {
+      const t = this.ctx!.currentTime + idx * 0.06;
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+
+      gain.gain.setValueAtTime(0.18, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+      osc.start(t);
+      osc.stop(t + 0.28);
+    });
+  }
+
   public stopBgm() {
     this.bgmOscillators.forEach((osc) => {
       try {

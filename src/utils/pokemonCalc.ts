@@ -131,7 +131,7 @@ export function createPokemonInstance(
   const nature: PokemonNature = ALL_NATURES[Math.floor(Math.random() * ALL_NATURES.length)];
   
   // High IVs for restricted/boss/shinies, random for regular
-  const ivs: IVs = (isShiny || baseData.isRestricted || baseData.id === 0 || baseData.id === 666)
+  const ivs: IVs = (isShiny || baseData.isRestricted || baseData.id === 0 || baseData.id === 9999 || baseData.name === 'ghost')
     ? generateMaxIVs()
     : generateRandomIVs();
   
@@ -268,7 +268,7 @@ export function createPokemonInstance(
         maxPp: mData.maxPp,
       };
     });
-  } else if (baseData.id === 666 || baseData.name === 'ghost') {
+  } else if (baseData.id === 9999 || baseData.name === 'ghost') {
     const ghostMoves = ['steal_curse', 'shadow_ball', 'dark_pulse', 'night_shade'];
     movesInstances = ghostMoves.map((mId) => {
       const mData = getMove(mId);
@@ -286,7 +286,7 @@ export function createPokemonInstance(
   // If shiny, use shiny sprite URLs (or base sprites for special boss/glitch pokemon)
   let sprites = baseData.sprites;
   if (isShiny) {
-    if (baseData.id === 0 || baseData.id === 666 || baseData.name === 'missingno' || baseData.name === 'ghost') {
+    if (baseData.id === 0 || baseData.id === 9999 || baseData.name === 'missingno' || baseData.name === 'ghost') {
       sprites = { ...baseData.sprites };
     } else {
       sprites = getSpriteUrls(baseData.id, baseData.name, true);
@@ -345,7 +345,7 @@ export function normalizePokemonInstance(pkmn: any): PokemonInstance {
   if (!pkmn || typeof pkmn !== 'object') return pkmn;
   const id = pkmn.pokedexId ?? pkmn.id ?? 1;
   const baseData = STARTERS_AND_POKEMON_DATABASE[id] || null;
-  const isSpecial = id === 0 || id === 666 || pkmn.name === 'missingno' || pkmn.name === 'ghost';
+  const isSpecial = id === 0 || id === 9999 || pkmn.name === 'missingno' || pkmn.name === 'ghost';
 
   let sprites = pkmn.sprites;
   if (isSpecial) {

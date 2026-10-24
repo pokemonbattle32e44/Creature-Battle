@@ -357,6 +357,7 @@ export interface GameEvent {
   itemDropMultiplier: number; // e.g. 2.0
   targetBiomes?: BiomeType[]; // if empty/undefined, applies to all
   allowRestrictedSpawns?: boolean; // allow Legendary/Mythical wild spawns
+  allowInAllBiomes?: boolean; // allow boosted species to appear in ANY biome (water, cave, etc.)
   createdAt?: string;
   createdBy?: string;
 }
@@ -371,6 +372,37 @@ export interface BroadcastEncounter {
   createdBy: string;
   createdAt: string;
   broadcastNumber: number;
+  targetPlayerIds?: string[]; // If set, only these selected online players receive it!
+  targetCount?: number;
+}
+
+export interface GameMission {
+  id: string;
+  title: string;
+  description: string;
+  category: 'daily' | 'battle' | 'capture' | 'special';
+  targetType: 'win_battles' | 'catch_pokemon' | 'level_up' | 'super_effective' | 'defeat_species';
+  targetValue: number;
+  targetSpeciesId?: number;
+  rewardType: 'battle_pass_xp' | 'ball' | 'money' | 'pokemon_encounter';
+  rewardAmount?: number;
+  rewardItemId?: string;
+  rewardPokemonId?: number;
+  rewardPokemonLevel?: number;
+  active: boolean;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export function formatPokedexId(id?: number, name?: string): string {
+  if (name?.toLowerCase() === 'ghost' || id === 9999 || id === 666 && name?.toLowerCase() === 'ghost') {
+    return '#???';
+  }
+  if (name?.toLowerCase() === 'missingno' || id === 0) {
+    return '#???';
+  }
+  if (!id) return '#???';
+  return `#${String(id).padStart(3, '0')}`;
 }
 
 export interface Item {
@@ -411,4 +443,9 @@ export interface UserSaveData {
   battleCountInBiome?: number;
   battlesPerRotation?: number;
   teraOrbCharged?: boolean;
+  // Battle Pass & Missions
+  battlePassXp?: number;
+  claimedBattlePassTiers?: number[];
+  missionProgress?: Record<string, { current: number; completed: boolean; claimed: boolean }>;
 }
+

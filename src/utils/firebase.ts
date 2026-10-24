@@ -31,7 +31,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import firebaseConfigJson from '../../firebase-applet-config.json';
-import { PokemonInstance, GameEvent, BroadcastEncounter } from '../types/pokemon';
+import { PokemonInstance, GameEvent, BroadcastEncounter, GameMission } from '../types/pokemon';
 
 // Initialize Firebase
 const firebaseConfig = {
@@ -81,6 +81,9 @@ export interface UserCloudData {
   pokedexSeen: number[];
   pokedexCount?: number;
   favoritePokemonId?: number;
+  battlePassXp?: number;
+  claimedBattlePassTiers?: number[];
+  missionProgress?: Record<string, { current: number; completed: boolean; claimed: boolean }>;
   createdAt: string;
   lastLogin: string;
 }
@@ -353,13 +356,67 @@ export async function deleteGameEvent(eventId: string): Promise<void> {
   await deleteDoc(docRef);
 }
 
-// Global Broadcast Encounter System (Admin transmits next wild encounter to all online players)
+// Online Presence System
+export interface OnlinePresenceUser {
+  uid: string;
+  nickname: string;
+  email?: string;
+  lastSeen: number;
+}
+
+export async function updateUserPresence(userProfile: { uid: string; nickname: string; email?: string }): Promise<void> {
+  if (!userProfile.uid) return;
+  try {
+    const presenceRef = doc(db, 'presence', userProfile.uid);
+    await setDoc(
+      presenceRef,
+      {
+        uid: userProfile.uid,
+        nickname: userProfile.nickname || 'Treinador',
+        email: userProfile.email || '',
+        lastSeen: Date.now(),
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.warn('Presence update failed:', e);
+  }
+}
+
+export function subscribeOnlineUsers(callback: (users: OnlinePresenceUser[]) => void) {
+  try {
+    const presenceCol = collection(db, 'presence');
+    return onSnapshot(
+      presenceCol,
+      (snap) => {
+        const now = Date.now();
+        const onlineUsers: OnlinePresenceUser[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as OnlinePresenceUser;
+          // Active in the last 75 seconds
+          if (data && now - data.lastSeen < 75000) {
+            onlineUsers.push(data);
+          }
+        });
+        callback(onlineUsers);
+      },
+      (err) => console.warn('Online users presence error:', err)
+    );
+  } catch (e) {
+    console.warn('Failed to subscribe to online users:', e);
+    return () => {};
+  }
+}
+
+// Global Broadcast Encounter System (Admin transmits next wild encounter to all or selected online players)
 export async function setBroadcastEncounter(broadcast: {
   speciesId: number;
   speciesName: string;
   level: number;
   isShiny: boolean;
   adminEmail: string;
+  targetPlayerIds?: string[];
+  targetCount?: number;
 }): Promise<void> {
   const systemDocRef = doc(db, 'system', 'broadcast_encounter');
   const payload: BroadcastEncounter = {
@@ -371,6 +428,8 @@ export async function setBroadcastEncounter(broadcast: {
     createdBy: broadcast.adminEmail,
     createdAt: new Date().toISOString(),
     broadcastNumber: Date.now(),
+    targetPlayerIds: broadcast.targetPlayerIds || [],
+    targetCount: broadcast.targetCount,
   };
   await setDoc(systemDocRef, sanitizeData(payload));
 }
@@ -404,3 +463,59 @@ export function subscribeToBroadcastEncounter(callback: (encounter: BroadcastEnc
     return () => {};
   }
 }
+
+// Missions System Management
+export async function fetchMissions(): Promise<GameMission[]> {
+  try {
+    const missionsRef = collection(db, 'missions');
+    const snap = await getDocs(missionsRef);
+    const list: GameMission[] = [];
+    snap.forEach((d) => {
+      list.push({ id: d.id, ...(d.data() as Omit<GameMission, 'id'>) });
+    });
+    return list;
+  } catch (e) {
+    console.warn('Failed to fetch missions:', e);
+    return [];
+  }
+}
+
+export function subscribeMissions(callback: (missions: GameMission[]) => void) {
+  try {
+    const missionsRef = collection(db, 'missions');
+    return onSnapshot(
+      missionsRef,
+      (snap) => {
+        const list: GameMission[] = [];
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...(d.data() as Omit<GameMission, 'id'>) });
+        });
+        callback(list);
+      },
+      (err) => console.warn('Missions snapshot error:', err)
+    );
+  } catch (e) {
+    console.warn('Failed to subscribe to missions:', e);
+    return () => {};
+  }
+}
+
+export async function saveMission(mission: Partial<GameMission>): Promise<string> {
+  const missionsRef = collection(db, 'missions');
+  const missionId = mission.id || `mission_${Date.now()}`;
+  const docRef = doc(missionsRef, missionId);
+  const payload = sanitizeData({
+    ...mission,
+    id: missionId,
+    active: mission.active !== undefined ? mission.active : true,
+    createdAt: mission.createdAt || new Date().toISOString(),
+  });
+  await setDoc(docRef, payload, { merge: true });
+  return missionId;
+}
+
+export async function deleteMission(missionId: string): Promise<void> {
+  const docRef = doc(db, 'missions', missionId);
+  await deleteDoc(docRef);
+}
+

@@ -234,8 +234,8 @@ const KNOWN_NAMES: Record<number, string> = {
   960: 'Wiglett', 961: 'Bombirdier', 962: 'Finizen', 965: 'Varoom', 967: 'Cyclizar', 968: 'Orthworm',
   969: 'Glimmet', 971: 'Greavard', 973: 'Flamigo', 974: 'Cetoddle', 976: 'Veluza', 977: 'Dondozo',
   978: 'Tatsugiri', 979: 'Annihilape', 980: 'Clodsire', 981: 'Farigiraf', 982: 'Dudunsparce', 983: 'Kingambit',
-  984: 'Great Tusk', 985: 'Scream Tail', 986: 'Brute Bonnet', 987: 'Flutter Mane', 988: 'Slither Wing', 989: 'Sandy Shocks', 990: 'Iron Treads', 991: 'Iron Bundle', 992: 'Iron Hands', 993: 'Iron Jugulis', 994: 'Iron Moth', 995: 'Iron Thorns', 996: 'Frigibax', 998: 'Baxcalibur', 999: 'Gimmighoul', 1000: 'Gholdengo', 1001: 'Wo-Chien', 1002: 'Chien-Pao', 1003: 'Ting-Lu', 1004: 'Chi-Yu', 1005: 'Roaring Moon', 1006: 'Iron Valiant', 1007: 'Koraidon', 1008: 'Miraidon', 1009: 'Walking Wake', 1010: 'Iron Leaves', 1011: 'Dipplin', 1012: 'Poltchageist', 1014: 'Okidogi', 1015: 'Munkidori', 1016: 'Fezandipiti', 1017: 'Ogerpon', 1018: 'Archaludon', 1019: 'Hydrapple', 1020: 'Gouging Fire', 1021: 'Raging Bolt', 1022: 'Iron Boulder', 1023: 'Iron Crown', 1024: 'Terapagos', 1025: 'Pecharunt',
-  0: 'MissingNO.', 666: 'GHOST'
+  665: 'Spewpa', 666: 'Vivillon',
+  0: 'MissingNO.', 9999: 'GHOST'
 };
 
 import { STARTERS_AND_POKEMON_DATABASE } from './startersAndPokemon';

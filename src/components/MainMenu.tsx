@@ -24,8 +24,9 @@ import {
   Compass,
   RefreshCw,
   Calendar,
+  Settings,
 } from 'lucide-react';
-import { PokemonInstance, BiomeType, GameEvent } from '../types/pokemon';
+import { PokemonInstance, BiomeType, GameEvent, formatPokedexId } from '../types/pokemon';
 import { ITEMS_DATABASE } from '../data/itemsData';
 import { TYPE_COLORS, TYPE_NAMES_PT } from '../data/typeChart';
 import { soundEngine } from '../utils/soundEngine';
@@ -55,6 +56,9 @@ interface MainMenuProps {
   onOpenFriends: () => void;
   onOpenLeaderboard: () => void;
   onOpenAdminPanel: () => void;
+  onOpenBattlePass?: () => void;
+  onOpenMissions?: () => void;
+  onOpenSettings?: () => void;
   battlesWon: number;
   pokemonCaught: number;
 }
@@ -80,6 +84,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onOpenFriends,
   onOpenLeaderboard,
   onOpenAdminPanel,
+  onOpenBattlePass,
+  onOpenMissions,
+  onOpenSettings,
   battlesWon,
   pokemonCaught,
 }) => {
@@ -103,7 +110,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.08)_0%,transparent_70%)] pointer-events-none"></div>
       
       {/* Top Header Bar */}
-      <header className="flex justify-between items-center bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 px-5 shadow-xl z-10">
+      <header className="flex justify-between items-center bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 px-5 shadow-xl z-10 gap-2 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-950/50">
             <Sparkles className="w-5 h-5 text-white" />
@@ -120,7 +127,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </div>
         </div>
 
-        {/* Currency, Social, Auth & Audio Controls */}
+        {/* Currency, Social, Auth & Controls */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-inner">
             <span className="text-amber-400 font-bold text-sm">₽</span>
@@ -128,6 +135,36 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               {pokedollars.toLocaleString('pt-BR')}
             </span>
           </div>
+
+          {/* Battle Pass Button */}
+          {onOpenBattlePass && (
+            <button
+              onClick={() => {
+                soundEngine.playClick();
+                onOpenBattlePass();
+              }}
+              className="p-2.5 bg-gradient-to-r from-yellow-500/20 to-amber-500/20 hover:from-yellow-500/30 hover:to-amber-500/30 text-yellow-300 rounded-xl border border-yellow-500/50 transition-all active:scale-95 flex items-center gap-1.5 text-xs font-black shadow-md shadow-yellow-500/10"
+              title="Passe de Batalha: Edição Pikachu"
+            >
+              <Zap className="w-4 h-4 fill-current text-yellow-400" />
+              <span>Passe</span>
+            </button>
+          )}
+
+          {/* Missions Button */}
+          {onOpenMissions && (
+            <button
+              onClick={() => {
+                soundEngine.playClick();
+                onOpenMissions();
+              }}
+              className="p-2.5 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-300 rounded-xl border border-emerald-500/50 transition-all active:scale-95 flex items-center gap-1.5 text-xs font-bold"
+              title="Missões e Desafios"
+            >
+              <Compass className="w-4 h-4 text-emerald-400" />
+              <span>Missões</span>
+            </button>
+          )}
 
           {/* Leaderboard Button */}
           <button
@@ -139,7 +176,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             title="Ranking Global"
           >
             <Trophy className="w-4 h-4 text-amber-400" />
-            <span className="hidden md:inline">Ranking</span>
+            <span className="hidden lg:inline">Ranking</span>
           </button>
 
           {/* Friends & Gifts Button */}
@@ -152,7 +189,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             title="Social & Presentes"
           >
             <Gift className="w-4 h-4 text-indigo-400" />
-            <span className="hidden md:inline">Social</span>
+            <span className="hidden lg:inline">Social</span>
           </button>
 
           {/* Account/Auth Button */}
@@ -165,7 +202,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             title="Sua Conta Firebase"
           >
             <UserCheck className="w-4 h-4 text-sky-400" />
-            <span className="hidden md:inline">{currentUser ? 'Conta' : 'Entrar'}</span>
+            <span className="hidden lg:inline">{currentUser ? 'Conta' : 'Entrar'}</span>
           </button>
 
           {/* Admin Panel Button */}
@@ -183,12 +220,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             </button>
           )}
 
+          {/* Settings Button */}
+          {onOpenSettings && (
+            <button
+              onClick={() => {
+                soundEngine.playClick();
+                onOpenSettings();
+              }}
+              className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-all active:scale-95"
+              title="Configurações (Tema Claro/Escuro & Áudio)"
+            >
+              <Settings className="w-4 h-4 text-slate-300" />
+            </button>
+          )}
+
           <button
             onClick={onToggleSound}
             className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-all active:scale-95"
             title="Ativar/Desativar Som"
           >
-            {soundEnabled ? <Volume2 className="w-5 h-5 text-emerald-400" /> : <VolumeX className="w-5 h-5 text-slate-500" />}
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
           </button>
         </div>
       </header>
@@ -203,7 +254,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           <div className="w-full flex justify-between items-center border-b border-slate-800/80 pb-3 mb-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md">
-                #{String(leadPokemon.pokedexId).padStart(3, '0')}
+                {formatPokedexId(leadPokemon.pokedexId, leadPokemon.name)}
               </span>
               <h2 className="text-xl sm:text-2xl font-black text-white capitalize tracking-wide flex items-center gap-1.5">
                 {leadPokemon.displayName}

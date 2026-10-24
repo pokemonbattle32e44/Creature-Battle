@@ -218,7 +218,7 @@ export const PokedexView: React.FC<PokedexViewProps> = ({
               >
                 {/* ID Badge */}
                 <div className="w-full flex justify-between items-center text-[10px] font-mono text-slate-400 mb-1">
-                  <span>#{pkmn.id === 666 ? '???' : String(pkmn.id).padStart(4, '0')}</span>
+                  <span>{pkmn.id === 9999 || pkmn.name === 'ghost' || pkmn.id === 0 ? '#???' : `#${String(pkmn.id).padStart(4, '0')}`}</span>
                   {isCaught ? (
                     <span className="text-emerald-400 font-bold flex items-center gap-0.5">
                       <CheckCircle2 className="w-3 h-3" /> Pego
@@ -239,9 +239,9 @@ export const PokedexView: React.FC<PokedexViewProps> = ({
                   {isCaught || isSeen ? (
                     <img
                       src={
-                        pkmn.id === 666
+                        pkmn.id === 9999 || pkmn.name === 'ghost'
                           ? 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/a/a2/MissingNo.2.png/revision/latest?cb=20200404195138'
-                          : pkmn.id === 0
+                          : pkmn.id === 0 || pkmn.name === 'missingno'
                           ? 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/e/e0/MissingNo.1.png/revision/latest?cb=20200404195127'
                           : `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pkmn.id}.png`
                       }
@@ -249,7 +249,7 @@ export const PokedexView: React.FC<PokedexViewProps> = ({
                       referrerPolicy="no-referrer"
                       className={`w-full h-full object-contain ${
                         !isCaught && isSeen ? 'brightness-0 opacity-40 blur-[0.5px]' : ''
-                      } ${pkmn.id === 666 ? 'ghost-aura' : ''} ${pkmn.id === 0 ? 'missingno-pixel-glitch' : ''}`}
+                      } ${pkmn.id === 9999 || pkmn.name === 'ghost' ? 'ghost-aura' : ''} ${pkmn.id === 0 ? 'missingno-pixel-glitch' : ''}`}
                       loading="lazy"
                     />
                   ) : (

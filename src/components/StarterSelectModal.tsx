@@ -10,6 +10,28 @@ interface StarterSelectModalProps {
   onSelectStarter: (pokemonData: PokemonBaseData) => void;
 }
 
+// Official canon starters (1st Stage) of Gens 1-9 + Pikachu
+const OFFICIAL_STARTERS_AND_PIKACHU_IDS = new Set([
+  // Gen 1
+  1, 4, 7, 25,
+  // Gen 2
+  152, 155, 158,
+  // Gen 3
+  252, 255, 258,
+  // Gen 4
+  387, 390, 393,
+  // Gen 5
+  495, 498, 501,
+  // Gen 6
+  650, 653, 656,
+  // Gen 7
+  722, 725, 728,
+  // Gen 8
+  810, 813, 816,
+  // Gen 9
+  906, 909, 912,
+]);
+
 export const StarterSelectModal: React.FC<StarterSelectModalProps> = ({ onSelectStarter }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGen, setSelectedGen] = useState<number | 'all'>('all');
@@ -17,9 +39,9 @@ export const StarterSelectModal: React.FC<StarterSelectModalProps> = ({ onSelect
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Eligible starters: Stage 1 / single stage species from National Dex
+  // Eligible starters: Only canon starters in their 1st stage + Pikachu
   const stage1Species = useMemo(() => {
-    return NATIONAL_POKEDEX_INDEX.filter((entry) => entry.isStage1Basic);
+    return NATIONAL_POKEDEX_INDEX.filter((entry) => OFFICIAL_STARTERS_AND_PIKACHU_IDS.has(entry.id));
   }, []);
 
   const filteredSpecies = useMemo(() => {
@@ -72,13 +94,13 @@ export const StarterSelectModal: React.FC<StarterSelectModalProps> = ({ onSelect
         {/* Header */}
         <div className="text-center mb-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-1.5">
-            <Sparkles className="w-3.5 h-3.5" /> Escolha seu Inicial (Todas as Geracões #1 a #1025)
+            <Sparkles className="w-3.5 h-3.5" /> Iniciais Oficiais (Gens 1 a 9 + Pikachu)
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Selecione seu Primeiro Pokémon
+            Selecione seu Pokémon Inicial
           </h1>
           <p className="text-slate-400 text-xs mt-1">
-            Escolha qualquer Pokémon de 1º estágio ou estágio único entre os <span className="text-emerald-400 font-bold">1025 Pokémon</span> da PokéDex Nacional!
+            Escolha entre os <span className="text-emerald-400 font-bold">28 Iniciais Canônicos</span> de todas as gerações no 1º estágio ou o lendário <span className="text-yellow-400 font-bold">Pikachu</span>!
           </p>
         </div>
 

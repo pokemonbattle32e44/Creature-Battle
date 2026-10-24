@@ -38,24 +38,6 @@ export const ITEMS_DATABASE: Record<string, Item> = {
     description: 'A melhor Poké Bola! Captura qualquer Pokémon sem falhar.',
     sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png',
   },
-  missingno_ticket: {
-    id: 'missingno_ticket',
-    name: 'Incenso Glitch (MissingNO. 👾)',
-    category: 'incense',
-    price: 4000,
-    incenseSpecial: 'missingno_glitch',
-    description: 'Aroma de bytes estáticos. Traz uma chance mínima e rara de atrair o erro MissingNO. disfarçado como um Pokémon fora da ordem natural! Requer Master Ball para capturar.',
-    sprite: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/e/e0/MissingNo.1.png/revision/latest?cb=20200404195127',
-  },
-  ghost_ticket: {
-    id: 'ghost_ticket',
-    name: 'Incenso da Maldição (GHOST 👻)',
-    category: 'incense',
-    price: 4000,
-    incenseSpecial: 'ghost_curse',
-    description: 'Aroma espectral macabro. Traz uma chance mínima e rara de invocar a entidade sombria GHOST disfarçado e com nível anômalo! Requer Master Ball para capturar.',
-    sprite: 'https://static.wikia.nocookie.net/fcoc-vs-battles/images/a/a2/MissingNo.2.png/revision/latest?cb=20200404195138',
-  },
 
   // Potions
   potion: {

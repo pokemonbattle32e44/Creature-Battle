@@ -18,11 +18,16 @@ import {
   CheckCircle,
   Radio,
   Globe,
+  Users,
+  Compass,
+  Gift,
+  Search,
 } from 'lucide-react';
 import { STARTERS_AND_POKEMON_DATABASE } from '../data/startersAndPokemon';
 import { ITEMS_DATABASE } from '../data/itemsData';
 import { createPokemonInstance } from '../utils/pokemonCalc';
-import { PokemonInstance, GameEvent, BiomeType, BroadcastEncounter } from '../types/pokemon';
+import { fetchPokemonData } from '../utils/apiFetcher';
+import { PokemonInstance, GameEvent, BiomeType, BroadcastEncounter, GameMission, formatPokedexId } from '../types/pokemon';
 import {
   UserCloudData,
   syncUserToCloud,
@@ -33,10 +38,16 @@ import {
   setBroadcastEncounter,
   clearBroadcastEncounter,
   subscribeToBroadcastEncounter,
+  subscribeOnlineUsers,
+  OnlinePresenceUser,
+  subscribeMissions,
+  saveMission,
+  deleteMission,
 } from '../utils/firebase';
 import { soundEngine } from '../utils/soundEngine';
 import { BIOMES, BIOME_ROTATION_ORDER } from '../data/environments';
 import { NATIONAL_POKEDEX_INDEX } from '../data/nationalPokedex';
+import { PokemonSearchPicker } from './PokemonSearchPicker';
 
 interface AdminPanelModalProps {
   userCloudProfile: UserCloudData;
@@ -49,9 +60,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onUpdateProfile,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'resources' | 'events' | 'broadcast'>('resources');
+  const [activeTab, setActiveTab] = useState<'resources' | 'events' | 'broadcast' | 'missions'>('resources');
   const [moneyAmount, setMoneyAmount] = useState('50000');
-  const [selectedPokedexId, setSelectedPokedexId] = useState<number>(666); // Default to GHOST
+  const [selectedPokedexId, setSelectedPokedexId] = useState<number>(9999); // Default to GHOST
   const [level, setLevel] = useState<number>(100);
   const [isShiny, setIsShiny] = useState<boolean>(true);
   const [targetDestination, setTargetDestination] = useState<'team' | 'box'>('team');
@@ -61,6 +72,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   // Events State
   const [eventsList, setEventsList] = useState<GameEvent[]>([]);
+  const [eventTabFilter, setEventTabFilter] = useState<'all' | 'active' | 'scheduled'>('all');
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
@@ -76,6 +88,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [boostedSpeciesBiomes, setBoostedSpeciesBiomes] = useState<BiomeType[]>([]);
   const [selectedBiomes, setSelectedBiomes] = useState<BiomeType[]>([]);
   const [allowRestrictedSpawns, setAllowRestrictedSpawns] = useState(false);
+  const [allowInAllBiomes, setAllowInAllBiomes] = useState(false);
   const [eventActiveImmediate, setEventActiveImmediate] = useState(true);
 
   // Global Broadcast Next Wild Encounter State
@@ -83,13 +96,40 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [broadcastLevel, setBroadcastLevel] = useState<number>(50);
   const [broadcastShiny, setBroadcastShiny] = useState<boolean>(true);
   const [currentBroadcast, setCurrentBroadcast] = useState<BroadcastEncounter | null>(null);
+  const [onlineUsers, setOnlineUsers] = useState<OnlinePresenceUser[]>([]);
+  const [broadcastAudience, setBroadcastAudience] = useState<'all' | 'subset'>('all');
+  const [broadcastTargetCount, setBroadcastTargetCount] = useState<number>(1);
+
+  // Missions Management State
+  const [missionsList, setMissionsList] = useState<GameMission[]>([]);
+  const [missionTitle, setMissionTitle] = useState('');
+  const [missionDesc, setMissionDesc] = useState('');
+  const [missionCategory, setMissionCategory] = useState<'daily' | 'battle' | 'capture' | 'special'>('battle');
+  const [missionTargetType, setMissionTargetType] = useState<'win_battles' | 'catch_pokemon' | 'super_effective'>('win_battles');
+  const [missionTargetValue, setMissionTargetValue] = useState<number>(3);
+  const [missionRewardType, setMissionRewardType] = useState<'battle_pass_xp' | 'ball' | 'money' | 'pokemon_encounter'>('battle_pass_xp');
+  const [missionRewardAmount, setMissionRewardAmount] = useState<number>(300);
+  const [missionRewardItemId, setMissionRewardItemId] = useState<string>('ultra_ball');
+  const [missionRewardPokemonId, setMissionRewardPokemonId] = useState<number>(25);
+  const [missionRewardPokemonLevel, setMissionRewardPokemonLevel] = useState<number>(25);
 
   useEffect(() => {
     loadEvents();
-    const unsub = subscribeToBroadcastEncounter((bc) => {
+    const unsubBroadcast = subscribeToBroadcastEncounter((bc) => {
       setCurrentBroadcast(bc);
     });
-    return () => unsub();
+    const unsubOnline = subscribeOnlineUsers((users) => {
+      setOnlineUsers(users);
+    });
+    const unsubMissions = subscribeMissions((missions) => {
+      setMissionsList(missions);
+    });
+
+    return () => {
+      unsubBroadcast();
+      unsubOnline();
+      unsubMissions();
+    };
   }, []);
 
   const loadEvents = async () => {
@@ -131,7 +171,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   const handleSpawnPokemon = async () => {
     soundEngine.playCatchSuccess();
-    const baseData = STARTERS_AND_POKEMON_DATABASE[selectedPokedexId] || STARTERS_AND_POKEMON_DATABASE[1];
+    const baseData =
+      (await fetchPokemonData(selectedPokedexId)) ||
+      STARTERS_AND_POKEMON_DATABASE[selectedPokedexId] ||
+      STARTERS_AND_POKEMON_DATABASE[1];
     const newPkmn = createPokemonInstance(baseData, level, isShiny);
 
     const updated = { ...userCloudProfile };
@@ -165,56 +208,76 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       return;
     }
 
-    const startDate = new Date().toISOString();
-    const endDate = new Date(Date.now() + eventDurationHours * 3600 * 1000).toISOString();
+    soundEngine.playLevelUp();
+    const now = new Date();
+    const endDate = new Date(now.getTime() + eventDurationHours * 60 * 60 * 1000);
 
-    const newEvent: Partial<GameEvent> = {
-      id: editingEventId || `event_${Date.now()}`,
-      name: eventName.trim(),
-      description: eventDescription.trim() || `Evento especial da Arena com bônus ativos!`,
-      startDate,
-      endDate,
-      active: eventActiveImmediate,
+    const payload: Partial<GameEvent> = {
+      id: editingEventId || undefined,
+      name: eventName,
+      description: eventDescription,
       shinyMultiplier: eventShinyMult,
       expMultiplier: eventExpMult,
       moneyMultiplier: eventMoneyMult,
       itemDropMultiplier: 1.5,
-      spawnBoosts: {
-        [String(boostedSpeciesId)]: boostPercentage,
-      },
+      allowRestrictedSpawns,
+      allowInAllBiomes,
       targetBiomes: selectedBiomes.length > 0 ? selectedBiomes : undefined,
       boostedSpeciesBiomes: boostedSpeciesBiomes.length > 0 ? boostedSpeciesBiomes : undefined,
-      allowRestrictedSpawns,
+      spawnBoosts: boostedSpeciesId ? { [String(boostedSpeciesId)]: boostPercentage } : {},
+      startDate: now.toISOString(),
+      endDate: endDate.toISOString(),
+      active: eventActiveImmediate,
       createdBy: userCloudProfile.email,
     };
 
-    await saveGameEvent(newEvent);
-    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin salvou evento: ${newEvent.name}`);
-    soundEngine.playLevelUp();
-    setMessage(`Evento "${newEvent.name}" configurado e propagado no servidor com sucesso!`);
+    await saveGameEvent(payload);
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin salvou evento: ${eventName}.`);
+    setMessage(`Evento "${eventName}" salvo com sucesso!`);
 
-    // Reset form
+    // Reset Form
     setEditingEventId(null);
     setEventName('');
     setEventDescription('');
     setBoostedSpeciesBiomes([]);
     setSelectedBiomes([]);
+    setAllowInAllBiomes(false);
     loadEvents();
   };
 
   const handleStartBroadcast = async () => {
     soundEngine.playLevelUp();
-    const base = STARTERS_AND_POKEMON_DATABASE[broadcastSpeciesId] || STARTERS_AND_POKEMON_DATABASE[25];
+    const base =
+      (await fetchPokemonData(broadcastSpeciesId)) ||
+      STARTERS_AND_POKEMON_DATABASE[broadcastSpeciesId] ||
+      STARTERS_AND_POKEMON_DATABASE[25];
     const name = base?.displayName || `Pokémon #${broadcastSpeciesId}`;
+
+    let targetPlayerIds: string[] = [];
+    if (broadcastAudience === 'subset' && onlineUsers.length > 0) {
+      // Pick random subset of N players from onlineUsers
+      const shuffled = [...onlineUsers].sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, Math.max(1, Math.min(onlineUsers.length, broadcastTargetCount)));
+      targetPlayerIds = selected.map((u) => u.uid);
+    }
+
     await setBroadcastEncounter({
       speciesId: broadcastSpeciesId,
       speciesName: name,
       level: broadcastLevel,
       isShiny: broadcastShiny,
       adminEmail: userCloudProfile.email,
+      targetPlayerIds,
+      targetCount: targetPlayerIds.length > 0 ? targetPlayerIds.length : undefined,
     });
-    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin iniciou transmissão global: ${name} Nv.${broadcastLevel}.`);
-    setMessage(`📡 Transmissão iniciada! O próximo encontro na Grama de todos os jogadores online será ${name} Nv.${broadcastLevel}${broadcastShiny ? ' ✨ Shiny' : ''}!`);
+
+    const audienceText =
+      targetPlayerIds.length > 0
+        ? `${targetPlayerIds.length} jogador(es) selecionado(s) online`
+        : 'TODOS os jogadores online';
+
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin iniciou transmissão global para ${audienceText}: ${name} Nv.${broadcastLevel}.`);
+    setMessage(`📡 Transmissão iniciada para ${audienceText}: ${name} Nv.${broadcastLevel}${broadcastShiny ? ' ✨ Shiny' : ''}!`);
   };
 
   const handleClearBroadcast = async () => {
@@ -238,6 +301,41 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     loadEvents();
   };
 
+  const handleCreateMission = async () => {
+    if (!missionTitle.trim()) {
+      alert('Informe o título da missão!');
+      return;
+    }
+    soundEngine.playLevelUp();
+    const newMission: Partial<GameMission> = {
+      title: missionTitle,
+      description: missionDesc || 'Complete o objetivo para reivindicar a recompensa!',
+      category: missionCategory,
+      targetType: missionTargetType,
+      targetValue: missionTargetValue || 3,
+      rewardType: missionRewardType,
+      rewardAmount: missionRewardType !== 'pokemon_encounter' ? missionRewardAmount : undefined,
+      rewardItemId: missionRewardType === 'ball' ? missionRewardItemId : undefined,
+      rewardPokemonId: missionRewardType === 'pokemon_encounter' ? missionRewardPokemonId : undefined,
+      rewardPokemonLevel: missionRewardType === 'pokemon_encounter' ? missionRewardPokemonLevel : undefined,
+      active: true,
+      createdBy: userCloudProfile.email,
+    };
+
+    await saveMission(newMission);
+    await addSystemLog('admin_action', [userCloudProfile.uid], `Admin criou missão: ${missionTitle}.`);
+    setMessage(`Missão "${missionTitle}" publicada com sucesso para todos os jogadores!`);
+    setMissionTitle('');
+    setMissionDesc('');
+  };
+
+  const handleDeleteMission = async (id: string) => {
+    if (!confirm('Deseja realmente remover esta missão?')) return;
+    await deleteMission(id);
+    soundEngine.playFaint();
+    setMessage('Missão removida com sucesso.');
+  };
+
   const toggleBiomeSelection = (b: BiomeType) => {
     if (selectedBiomes.includes(b)) {
       setSelectedBiomes(selectedBiomes.filter((x) => x !== b));
@@ -246,11 +344,21 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
   };
 
-  const pokemonKeys = Object.keys(STARTERS_AND_POKEMON_DATABASE).map(Number);
+  // Filter events for scheduled events tab
+  const nowIso = new Date().toISOString();
+  const filteredEvents = eventsList.filter((e) => {
+    if (eventTabFilter === 'active') {
+      return e.active && (!e.startDate || e.startDate <= nowIso) && (!e.endDate || e.endDate >= nowIso);
+    }
+    if (eventTabFilter === 'scheduled') {
+      return e.startDate && e.startDate > nowIso;
+    }
+    return true;
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-slate-900 border border-amber-500/50 w-full max-w-2xl rounded-3xl p-5 sm:p-6 relative shadow-2xl text-slate-100 max-h-[92vh] overflow-y-auto">
+      <div className="bg-slate-900 border border-amber-500/50 w-full max-w-3xl rounded-3xl p-5 sm:p-6 relative shadow-2xl text-slate-100 max-h-[92vh] overflow-y-auto">
         
         {/* Close Button */}
         <button
@@ -260,100 +368,127 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
-            <Crown className="w-7 h-7 text-slate-950" />
+        {/* Modal Header */}
+        <div className="flex items-center gap-3 mb-5 border-b border-slate-800 pb-4">
+          <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
+            <Crown className="w-7 h-7" />
           </div>
           <div>
-            <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
+            <h3 className="text-xl font-black text-white flex items-center gap-2">
               Painel de Administrador
+              <span className="text-[10px] bg-amber-500 text-slate-950 font-black px-2 py-0.5 rounded-full uppercase">
+                Master Admin
+              </span>
             </h3>
             <p className="text-xs text-slate-400">
-              Autorizado: <span className="font-mono text-amber-300">{userCloudProfile.email}</span>
+              Gerencie recursos, crie eventos e transmita encontros globais para a comunidade.
             </p>
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-5">
-          <button
-            onClick={() => setActiveTab('resources')}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-              activeTab === 'resources'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Zap className="w-4 h-4" /> Recursos
-          </button>
-          <button
-            onClick={() => setActiveTab('events')}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-              activeTab === 'events'
-                ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-md shadow-purple-500/20'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Calendar className="w-4 h-4" /> Eventos
-          </button>
-          <button
-            onClick={() => setActiveTab('broadcast')}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-              activeTab === 'broadcast'
-                ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-md shadow-rose-500/20'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Radio className="w-4 h-4" /> Encontro Global
-          </button>
-        </div>
-
+        {/* Notification Toast */}
         {message && (
-          <div className="p-3 bg-amber-950/60 border border-amber-500/40 rounded-2xl text-xs text-amber-300 font-bold mb-4 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>{message}</span>
+          <div className="mb-4 p-3 bg-emerald-950/70 border border-emerald-800 rounded-xl text-emerald-300 text-xs font-semibold flex items-center justify-between animate-fade-in">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <span>{message}</span>
+            </div>
+            <button onClick={() => setMessage(null)} className="text-slate-400 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
-        {/* TAB 1: RESOURCES & SPAWNS */}
+        {/* Tabs Navigation */}
+        <div className="flex gap-2 border-b border-slate-800 pb-3 mb-5 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('resources')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'resources'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" /> Recursos & Spawns
+          </button>
+
+          <button
+            onClick={() => setActiveTab('broadcast')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'broadcast'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Radio className="w-4 h-4" /> Encontro Global
+            {onlineUsers.length > 0 && (
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-950 text-emerald-400 font-bold border border-slate-700">
+                🟢 {onlineUsers.length} online
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('events')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'events'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Calendar className="w-4 h-4" /> Eventos & Agendamentos
+          </button>
+
+          <button
+            onClick={() => setActiveTab('missions')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'missions'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Compass className="w-4 h-4" /> Missões & Tarefas
+          </button>
+        </div>
+
+        {/* TAB 1: RESOURCES & SPAWN */}
         {activeTab === 'resources' && (
-          <div className="space-y-4">
-            {/* Section 1: Money */}
+          <div className="space-y-5">
+            {/* Money Injection */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-emerald-400" /> Adicionar Dinheiro
+              <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-emerald-400" /> Injetar PokéDólares
               </h4>
               <div className="flex gap-2">
                 <input
                   type="number"
                   value={moneyAmount}
                   onChange={(e) => setMoneyAmount(e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-emerald-400 font-bold focus:outline-none"
+                  className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-emerald-400 font-bold flex-1"
                 />
                 <button
                   onClick={handleAddMoney}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
                 >
-                  Adicionar $
+                  Adicionar
                 </button>
               </div>
             </div>
 
-            {/* Section 2: Items */}
+            {/* Item Injection */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                <Package className="w-4 h-4 text-sky-400" /> Adicionar Itens / Mega Stones / Tera Orb
+              <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <Package className="w-4 h-4 text-sky-400" /> Adicionar Itens à Bolsa
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <select
                   value={selectedItemKey}
                   onChange={(e) => setSelectedItemKey(e.target.value)}
-                  className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                  className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
                 >
-                  {Object.entries(ITEMS_DATABASE).map(([key, item]) => (
-                    <option key={key} value={key}>
-                      {item.name} ({item.category})
+                  {Object.entries(ITEMS_DATABASE).map(([k, item]) => (
+                    <option key={k} value={k}>
+                      {item.name}
                     </option>
                   ))}
                 </select>
@@ -374,73 +509,19 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               </button>
             </div>
 
-            {/* Section 3: Spawn Special/Any Pokemon */}
+            {/* Spawn Any Pokemon (With Universal Search Picker across 1 to 1025) */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4">
               <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
                 <PlusCircle className="w-4 h-4 text-amber-400" /> Gerar Pokémon
               </h4>
 
-              {/* Quick Admin Legendaries */}
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setSelectedPokedexId(666)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
-                    selectedPokedexId === 666
-                      ? 'bg-purple-600/30 border-purple-500 text-purple-300 shadow-lg'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  👻 GHOST (Boss #666)
-                </button>
-                <button
-                  onClick={() => setSelectedPokedexId(0)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
-                    selectedPokedexId === 0
-                      ? 'bg-pink-600/30 border-pink-500 text-pink-300 shadow-lg'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  ⚡ MissingNO. (#0)
-                </button>
-                <button
-                  onClick={() => setSelectedPokedexId(6)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold border bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
-                >
-                  🔥 Charizard (#6)
-                </button>
-                <button
-                  onClick={() => setSelectedPokedexId(150)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold border bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
-                >
-                  🔮 Mewtwo (#150)
-                </button>
-                <button
-                  onClick={() => setSelectedPokedexId(448)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold border bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
-                >
-                  🐺 Lucario (#448)
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">
-                  Selecione o Pokémon:
-                </label>
-                <select
-                  value={selectedPokedexId}
-                  onChange={(e) => setSelectedPokedexId(Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
-                >
-                  {pokemonKeys.map((id) => {
-                    const pkmn = STARTERS_AND_POKEMON_DATABASE[id];
-                    return (
-                      <option key={id} value={id}>
-                        #{id === 666 ? '???' : id} - {pkmn.displayName}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+              {/* Universal Search Picker */}
+              <PokemonSearchPicker
+                selectedId={selectedPokedexId}
+                onSelect={(id) => setSelectedPokedexId(id)}
+                label="Pesquisar Qualquer Pokémon da Pokédex (1 a 1025) ou Entidades Míticas:"
+                allowBosses={true}
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -458,44 +539,256 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   <label className="block text-xs font-bold text-slate-400 mb-1">Destino:</label>
                   <select
                     value={targetDestination}
-                    onChange={(e) => setTargetDestination(e.target.value as 'team' | 'box')}
+                    onChange={(e) => setTargetDestination(e.target.value as any)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
                   >
-                    <option value="team">Time Principal</option>
+                    <option value="team">Time Atual</option>
                     <option value="box">PC Box</option>
                   </select>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
+              <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  id="shinyCheck"
+                  id="shiny-check"
                   checked={isShiny}
                   onChange={(e) => setIsShiny(e.target.checked)}
-                  className="w-4 h-4 accent-amber-500 rounded"
+                  className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400"
                 />
-                <label htmlFor="shinyCheck" className="text-xs font-bold text-amber-300 flex items-center gap-1 cursor-pointer">
-                  ✨ Versão Shiny (Brilhante)
+                <label htmlFor="shiny-check" className="text-xs font-bold text-amber-300 cursor-pointer">
+                  ✨ Gerar como Pokémon Shiny (Variante Rara)
                 </label>
               </div>
 
               <button
                 onClick={handleSpawnPokemon}
-                className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all hover:scale-[1.01] active:scale-95"
+                className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
               >
-                ⚡ GERAR POKÉMON AGORA
+                Gerar Pokémon e Adicionar
               </button>
             </div>
           </div>
         )}
 
-        {/* TAB 2: EVENTS MANAGER */}
+        {/* TAB 2: GLOBAL BROADCAST ENCOUNTER */}
+        {activeTab === 'broadcast' && (
+          <div className="space-y-5">
+            {/* Online Presence & Target Selection Card */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-emerald-400" />
+                  Jogadores Conectados no Servidor
+                </span>
+                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                  {onlineUsers.length} Online
+                </span>
+              </div>
+
+              {onlineUsers.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl bg-slate-900 border border-slate-800/80 max-h-24 overflow-y-auto">
+                  {onlineUsers.map((u) => (
+                    <span
+                      key={u.uid}
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700"
+                    >
+                      🟢 {u.nickname || 'Treinador'}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Nenhum outro jogador detectado recentemente nos últimos segundos.
+                </p>
+              )}
+
+              {/* Target Audience Toggle */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                <label className="block text-xs font-bold text-slate-300">
+                  Destinatários do Encontro Global:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastAudience('all')}
+                    className={`p-2.5 rounded-xl border text-left text-xs transition-all ${
+                      broadcastAudience === 'all'
+                        ? 'bg-rose-500/20 border-rose-500 text-white font-bold'
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <div>🌍 Todos os Jogadores Online</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">Transmite para 100% dos conectados</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastAudience('subset')}
+                    className={`p-2.5 rounded-xl border text-left text-xs transition-all ${
+                      broadcastAudience === 'subset'
+                        ? 'bg-rose-500/20 border-rose-500 text-white font-bold'
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <div>🎯 Número Específico de Jogadores</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">Sorteia N jogadores online aleatórios</div>
+                  </button>
+                </div>
+
+                {broadcastAudience === 'subset' && (
+                  <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
+                    <span className="text-xs text-slate-300 font-semibold">
+                      Quantos jogadores online devem receber?
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={Math.max(1, onlineUsers.length)}
+                      value={broadcastTargetCount}
+                      onChange={(e) => setBroadcastTargetCount(Math.max(1, Number(e.target.value)))}
+                      className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-rose-400 text-center"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Live Status Card */}
+            <div
+              className={`p-4 rounded-2xl border transition-all ${
+                currentBroadcast && currentBroadcast.active
+                  ? 'bg-gradient-to-r from-rose-950/80 via-slate-900 to-purple-950/80 border-rose-500/50 shadow-xl shadow-rose-950/30'
+                  : 'bg-slate-950 border-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                  <Radio
+                    className={`w-4 h-4 ${
+                      currentBroadcast?.active ? 'text-rose-400 animate-pulse' : 'text-slate-500'
+                    }`}
+                  />
+                  <span>Status da Transmissão Global</span>
+                </span>
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                    currentBroadcast?.active
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-400/40 animate-pulse'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  {currentBroadcast?.active ? 'AO VIVO • ATIVO NO SERVIDOR' : 'INATIVO'}
+                </span>
+              </div>
+
+              {currentBroadcast && currentBroadcast.active ? (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${
+                        currentBroadcast.isShiny ? 'shiny/' : ''
+                      }${currentBroadcast.speciesId}.png`}
+                      alt={currentBroadcast.speciesName}
+                      className="w-16 h-16 object-contain drop-shadow-lg"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png';
+                      }}
+                    />
+                    <div>
+                      <div className="text-base font-black text-white flex items-center gap-2">
+                        <span>
+                          {currentBroadcast.isShiny
+                            ? `✨ ${currentBroadcast.speciesName}`
+                            : currentBroadcast.speciesName}
+                        </span>
+                        <span className="text-xs font-bold text-rose-400 bg-rose-950 px-2 py-0.5 rounded-lg border border-rose-800">
+                          Nv. {currentBroadcast.level}
+                        </span>
+                      </div>
+                      <p className="text-xs text-rose-200/90 mt-0.5">
+                        Transmitido por <strong className="font-mono text-white">{currentBroadcast.createdBy}</strong>
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {currentBroadcast.targetPlayerIds && currentBroadcast.targetPlayerIds.length > 0
+                          ? `Transmitido exclusivamente para ${currentBroadcast.targetPlayerIds.length} jogador(es) selecionados!`
+                          : 'O próximo encontro selvagem na Grama de todos os jogadores conectados será este!'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleClearBroadcast}
+                    className="px-4 py-2 bg-slate-800 hover:bg-rose-900/60 text-rose-300 border border-rose-600/50 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" /> Cancelar Transmissão
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Nenhum encontro global está ativo no momento. Use o formulário abaixo para forçar o próximo encontro
+                  dos jogadores.
+                </p>
+              )}
+            </div>
+
+            {/* Broadcast Form with Universal Picker */}
+            <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                <Sparkles className="w-4 h-4 text-rose-400" />
+                <h4 className="font-bold text-sm text-white">Configurar Novo Encontro Global</h4>
+              </div>
+
+              <PokemonSearchPicker
+                selectedId={broadcastSpeciesId}
+                onSelect={(id) => setBroadcastSpeciesId(id)}
+                label="Espécie do Pokémon para Encontro Global (Pesquise qualquer espécie da Pokédex #1 a #1025 ou Míticos):"
+                allowBosses={true}
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Nível do Pokémon (1-100):</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={broadcastLevel}
+                    onChange={(e) => setBroadcastLevel(Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={broadcastShiny}
+                      onChange={(e) => setBroadcastShiny(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-500 focus:ring-rose-400"
+                    />
+                    <span className="text-xs font-bold text-amber-300">✨ Forçar Variante Shiny</span>
+                  </label>
+                </div>
+              </div>
+
+              <button
+                onClick={handleStartBroadcast}
+                className="w-full py-3 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs rounded-xl shadow-lg shadow-rose-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Radio className="w-4 h-4" />
+                Iniciar Transmissão de Encontro Global
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: EVENTS & SCHEDULES */}
         {activeTab === 'events' && (
           <div className="space-y-5">
-            {/* Create Event Card */}
-            <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-purple-500/30 space-y-4">
-              <h4 className="text-sm font-black text-purple-300 uppercase tracking-wide flex items-center gap-2">
+            {/* Event Form */}
+            <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+              <h4 className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-purple-400" />
                 {editingEventId ? 'Editar Evento do Servidor' : 'Criar & Programar Novo Evento'}
               </h4>
@@ -583,424 +876,351 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   </div>
                 </div>
 
-                {/* Species Boost */}
-                <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                {/* Species Boost with Universal Picker & All Biomes Option */}
+                <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-3">
                   <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
                     <TrendingUp className="w-3.5 h-3.5" /> Aumento de Aparição de Espécie Específica:
                   </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">Espécie Alvo:</label>
-                      <select
-                        value={boostedSpeciesId}
-                        onChange={(e) => setBoostedSpeciesId(Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      >
-                        {pokemonKeys.map((id) => (
-                          <option key={id} value={id}>
-                            #{id} - {STARTERS_AND_POKEMON_DATABASE[id]?.displayName}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
 
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">Aumento de Chance (%):</label>
-                      <select
-                        value={boostPercentage}
-                        onChange={(e) => setBoostPercentage(Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      >
-                        <option value={50}>+50% (1.5x peso relativo)</option>
-                        <option value={100}>+100% (2x peso relativo)</option>
-                        <option value={200}>+200% (3x peso relativo - Exemplo do Briefing!)</option>
-                        <option value={400}>+400% (5x peso relativo)</option>
-                        <option value={900}>+900% (10x peso relativo)</option>
-                      </select>
-                    </div>
-                  </div>
+                  <PokemonSearchPicker
+                    selectedId={boostedSpeciesId}
+                    onSelect={(id) => setBoostedSpeciesId(id)}
+                    label="Espécie Alvo em Destaque (Pesquise qualquer espécie da Pokédex #1 a #1025):"
+                    allowBosses={false}
+                  />
 
-                  {/* Area / Biome where this species boost specifically takes place */}
-                  <div className="pt-2 border-t border-slate-800/80">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="block text-[11px] font-bold text-purple-300 flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-purple-400" /> Área / Bioma de Aparição desta Espécie:
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setBoostedSpeciesBiomes([])}
-                        className="text-[10px] text-purple-400 hover:underline"
-                      >
-                        {boostedSpeciesBiomes.length === 0 ? '✓ Todas as Áreas' : 'Limpar (Todas)'}
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-slate-400 mb-2">
-                      Selecione os cenários onde este Pokémon aparecerá com a taxa aumentada (se vazio, aparece em todos):
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {BIOME_ROTATION_ORDER.map((bId) => {
-                        const biome = BIOMES[bId];
-                        const isSel = boostedSpeciesBiomes.includes(bId);
-                        return (
-                          <button
-                            key={`sp_biome_${bId}`}
-                            type="button"
-                            onClick={() => {
-                              if (boostedSpeciesBiomes.includes(bId)) {
-                                setBoostedSpeciesBiomes(boostedSpeciesBiomes.filter((x) => x !== bId));
-                              } else {
-                                setBoostedSpeciesBiomes([...boostedSpeciesBiomes, bId]);
-                              }
-                            }}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
-                              isSel
-                                ? 'bg-purple-600/30 border-purple-400 text-purple-200 shadow-sm'
-                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                            }`}
-                          >
-                            {biome.name.split(' ')[0]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Biome Filter Selection */}
-                <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-teal-400" /> Ambientes Afetados:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedBiomes([])}
-                      className="text-[11px] text-teal-400 hover:underline"
-                    >
-                      {selectedBiomes.length === 0 ? '✓ Todos os Ambientes' : 'Limpar (Todos)'}
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {BIOME_ROTATION_ORDER.map((bId) => {
-                      const biome = BIOMES[bId];
-                      const isSel = selectedBiomes.includes(bId);
-                      return (
-                        <button
-                          key={bId}
-                          type="button"
-                          onClick={() => toggleBiomeSelection(bId)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
-                            isSel
-                              ? 'bg-teal-500/20 border-teal-500 text-teal-300'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {biome.name.split(' ')[0]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Legendary Spawn & Active Toggles */}
-                <div className="flex flex-col sm:flex-row gap-3 pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer bg-slate-900/60 p-2 rounded-xl border border-slate-800/80 flex-1">
+                  {/* Allow in ALL Biomes Checkbox */}
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-purple-950/40 border border-purple-800/40 cursor-pointer transition-all hover:bg-purple-900/30">
                     <input
                       type="checkbox"
-                      checked={allowRestrictedSpawns}
-                      onChange={(e) => setAllowRestrictedSpawns(e.target.checked)}
-                      className="w-4 h-4 accent-purple-500 rounded"
+                      checked={allowInAllBiomes}
+                      onChange={(e) => setAllowInAllBiomes(e.target.checked)}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
                     />
-                    <span className="text-xs font-bold text-purple-300">
-                      👑 Permitir Lendários e Míticos Selvagens
-                    </span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer bg-slate-900/60 p-2 rounded-xl border border-slate-800/80 flex-1">
-                    <input
-                      type="checkbox"
-                      checked={eventActiveImmediate}
-                      onChange={(e) => setEventActiveImmediate(e.target.checked)}
-                      className="w-4 h-4 accent-emerald-500 rounded"
-                    />
-                    <span className="text-xs font-bold text-emerald-300">
-                      🟢 Iniciar Imediatamente
-                    </span>
+                    <div>
+                      <span className="text-xs font-bold text-purple-200">
+                        🌍 Permitir espécie em QUALQUER bioma (inclusive oceanos, cavernas e vulcões)
+                      </span>
+                      <p className="text-[10px] text-purple-300/70">
+                        Se ativado, o Pokémon aparecerá em todos os cenários sem restrições de habitat.
+                      </p>
+                    </div>
                   </label>
                 </div>
 
                 <button
                   onClick={handleCreateOrUpdateEvent}
-                  className="w-full py-3 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:opacity-95 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all active:scale-95"
+                  className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
                 >
-                  {editingEventId ? '✓ ATUALIZAR EVENTO' : '🚀 PUBLICAR & SALVAR EVENTO'}
+                  {editingEventId ? 'Atualizar Evento' : 'Publicar Evento no Servidor'}
                 </button>
               </div>
             </div>
 
-            {/* Existing Events List */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                <span>Histórico de Eventos do Servidor ({eventsList.length})</span>
-                {isLoadingEvents && <span className="text-[10px] text-purple-400 animate-pulse">Carregando...</span>}
+            {/* Events Sub-Tabs: All, Active, Scheduled */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <Clock className="w-4 h-4 text-purple-400" />
+                Eventos Cadastrados no Servidor ({filteredEvents.length})
               </h4>
 
-              {eventsList.length === 0 ? (
-                <div className="p-6 text-center text-slate-500 text-xs bg-slate-950 rounded-2xl border border-slate-800">
-                  Nenhum evento registrado ainda. Crie o primeiro evento acima!
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {eventsList.map((ev) => {
-                    const now = new Date().toISOString();
-                    const isRunning = ev.active && (!ev.endDate || now <= ev.endDate);
+              <div className="flex gap-1">
+                {(['all', 'active', 'scheduled'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setEventTabFilter(tab)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                      eventTabFilter === tab
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                    }`}
+                  >
+                    {tab === 'all' ? 'Todos' : tab === 'active' ? '🟢 Ao Vivo' : '📅 Agendados'}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                    return (
-                      <div
-                        key={ev.id}
-                        className={`p-3.5 rounded-2xl border transition-all bg-slate-950 flex flex-col sm:flex-row justify-between sm:items-center gap-3 ${
-                          isRunning
-                            ? 'border-emerald-500/50 shadow-md shadow-emerald-950/30'
-                            : 'border-slate-800 opacity-70'
-                        }`}
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                                isRunning
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                  : 'bg-slate-800 text-slate-400'
-                              }`}
-                            >
-                              {isRunning ? '🟢 AO VIVO' : '⚪ PAUSADO / EXPIRADO'}
-                            </span>
-                            <h5 className="font-bold text-sm text-white">{ev.name}</h5>
-                          </div>
+            {/* Events List */}
+            {filteredEvents.length === 0 ? (
+              <div className="p-6 text-center text-slate-500 text-xs bg-slate-950 rounded-2xl border border-slate-800">
+                Nenhum evento nesta categoria.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {filteredEvents.map((ev) => {
+                  const now = new Date().toISOString();
+                  const isRunning = ev.active && (!ev.endDate || now <= ev.endDate);
+                  const isScheduled = ev.startDate && ev.startDate > now;
 
-                          <p className="text-xs text-slate-400">{ev.description}</p>
-
-                          <div className="flex items-center gap-2 flex-wrap text-[11px] font-medium text-slate-400 pt-1">
-                            {ev.shinyMultiplier > 1 && (
-                              <span className="text-amber-400 font-bold bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-800/40">
-                                ✨ {ev.shinyMultiplier}x Shiny
-                              </span>
-                            )}
-                            {ev.expMultiplier > 1 && (
-                              <span className="text-sky-400 font-bold bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-800/40">
-                                📈 {ev.expMultiplier}x EXP
-                              </span>
-                            )}
-                            {ev.moneyMultiplier > 1 && (
-                              <span className="text-emerald-400 font-bold bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-800/40">
-                                💰 {ev.moneyMultiplier}x $
-                              </span>
-                            )}
-                            {ev.allowRestrictedSpawns && (
-                              <span className="text-purple-400 font-bold bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-800/40">
-                                👑 Lendários
-                              </span>
-                            )}
-                            {ev.spawnBoosts && Object.keys(ev.spawnBoosts).length > 0 && (
-                              <span className="text-pink-400 font-bold bg-pink-950/40 px-1.5 py-0.5 rounded border border-pink-800/40">
-                                🎯 +Spawn #{Object.keys(ev.spawnBoosts)[0]} {ev.boostedSpeciesBiomes && ev.boostedSpeciesBiomes.length > 0 ? `(${ev.boostedSpeciesBiomes.length} biomas)` : '(Todos biomas)'}
-                              </span>
-                            )}
-                          </div>
+                  return (
+                    <div
+                      key={ev.id}
+                      className={`p-3.5 rounded-2xl border transition-all bg-slate-950 flex flex-col sm:flex-row justify-between sm:items-center gap-3 ${
+                        isRunning
+                          ? 'border-emerald-500/50 shadow-md shadow-emerald-950/30'
+                          : isScheduled
+                          ? 'border-purple-500/50'
+                          : 'border-slate-800 opacity-70'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                              isRunning
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : isScheduled
+                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                : 'bg-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {isRunning ? '🟢 AO VIVO' : isScheduled ? '📅 AGENDADO' : '⚪ PAUSADO / ENCERRADO'}
+                          </span>
+                          <h5 className="font-bold text-sm text-white">{ev.name}</h5>
                         </div>
 
-                        {/* Event Action Controls */}
-                        <div className="flex items-center gap-1.5 self-end sm:self-center">
-                          <button
-                            onClick={() => handleToggleEventActive(ev)}
-                            className={`p-2 rounded-xl text-xs font-bold border transition-all ${
-                              ev.active
-                                ? 'bg-amber-950/40 border-amber-500/40 text-amber-300 hover:bg-amber-900/60'
-                                : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'
-                            }`}
-                            title={ev.active ? 'Pausar Evento' : 'Ativar Evento'}
-                          >
-                            {ev.active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                          </button>
+                        <p className="text-xs text-slate-400">{ev.description}</p>
 
-                          <button
-                            onClick={() => {
-                              setEditingEventId(ev.id);
-                              setEventName(ev.name);
-                              setEventDescription(ev.description);
-                              setEventShinyMult(ev.shinyMultiplier || 1);
-                              setEventExpMult(ev.expMultiplier || 1);
-                              setEventMoneyMult(ev.moneyMultiplier || 1);
-                              setAllowRestrictedSpawns(!!ev.allowRestrictedSpawns);
-                              setSelectedBiomes(ev.targetBiomes || []);
-                              setBoostedSpeciesBiomes(ev.boostedSpeciesBiomes || []);
-                              if (ev.spawnBoosts && Object.keys(ev.spawnBoosts).length > 0) {
-                                const firstKey = Object.keys(ev.spawnBoosts)[0];
-                                setBoostedSpeciesId(Number(firstKey) || 25);
-                                setBoostPercentage(ev.spawnBoosts[firstKey] || 200);
-                              }
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-colors"
-                            title="Editar Evento"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteEvent(ev.id)}
-                            className="p-2 bg-red-950/40 hover:bg-red-900/60 text-red-400 rounded-xl border border-red-800/50 transition-colors"
-                            title="Excluir Evento"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <div className="flex items-center gap-2 flex-wrap text-[11px] font-medium text-slate-400 pt-1">
+                          {ev.shinyMultiplier > 1 && (
+                            <span className="text-amber-400 font-bold bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-800/40">
+                              ✨ {ev.shinyMultiplier}x Shiny
+                            </span>
+                          )}
+                          {ev.expMultiplier > 1 && (
+                            <span className="text-sky-400 font-bold bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-800/40">
+                              📈 {ev.expMultiplier}x EXP
+                            </span>
+                          )}
+                          {ev.allowInAllBiomes && (
+                            <span className="text-purple-400 font-bold bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-800/40">
+                              🌍 Qualquer Bioma
+                            </span>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+
+                      <div className="flex items-center gap-1.5 self-end sm:self-center">
+                        <button
+                          onClick={() => handleToggleEventActive(ev)}
+                          className={`p-2 rounded-xl text-xs font-bold border transition-all ${
+                            ev.active
+                              ? 'bg-amber-950/40 border-amber-500/40 text-amber-300 hover:bg-amber-900/60'
+                              : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'
+                          }`}
+                          title={ev.active ? 'Pausar Evento' : 'Ativar Evento'}
+                        >
+                          {ev.active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteEvent(ev.id)}
+                          className="p-2 bg-red-950/40 hover:bg-red-900/60 text-red-400 rounded-xl border border-red-800/50 transition-colors"
+                          title="Excluir Evento"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Global Broadcast Next Wild Encounter Tab */}
-        {activeTab === 'broadcast' && (
+        {/* TAB 4: MISSIONS MANAGEMENT */}
+        {activeTab === 'missions' && (
           <div className="space-y-5">
-            {/* Live Status Card */}
-            <div
-              className={`p-4 rounded-2xl border transition-all ${
-                currentBroadcast && currentBroadcast.active
-                  ? 'bg-gradient-to-r from-rose-950/80 via-slate-900 to-purple-950/80 border-rose-500/50 shadow-xl shadow-rose-950/30'
-                  : 'bg-slate-950 border-slate-800'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                  <Radio
-                    className={`w-4 h-4 ${
-                      currentBroadcast?.active ? 'text-rose-400 animate-pulse' : 'text-slate-500'
-                    }`}
-                  />
-                  <span>Status da Transmissão Global</span>
-                </span>
-                <span
-                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                    currentBroadcast?.active
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-400/40 animate-pulse'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'
-                  }`}
-                >
-                  {currentBroadcast?.active ? 'AO VIVO • ATIVO NO SERVIDOR' : 'INATIVO'}
-                </span>
-              </div>
-
-              {currentBroadcast && currentBroadcast.active ? (
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${
-                        currentBroadcast.isShiny ? 'shiny/' : ''
-                      }${currentBroadcast.speciesId}.png`}
-                      alt={currentBroadcast.speciesName}
-                      className="w-16 h-16 object-contain drop-shadow-lg"
-                    />
-                    <div>
-                      <div className="text-base font-black text-white flex items-center gap-2">
-                        <span>
-                          {currentBroadcast.isShiny
-                            ? `✨ ${currentBroadcast.speciesName}`
-                            : currentBroadcast.speciesName}
-                        </span>
-                        <span className="text-xs font-bold text-rose-400 bg-rose-950 px-2 py-0.5 rounded-lg border border-rose-800">
-                          Nv. {currentBroadcast.level}
-                        </span>
-                      </div>
-                      <p className="text-xs text-rose-200/90 mt-0.5">
-                        Transmitido por <strong className="font-mono text-white">{currentBroadcast.createdBy}</strong>
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        O próximo Pokémon selvagem na Grama de <strong>todos os jogadores conectados</strong> será este!
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleClearBroadcast}
-                    className="px-4 py-2 bg-slate-800 hover:bg-rose-900/60 text-rose-300 border border-rose-600/50 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-4 h-4" /> Cancelar Transmissão
-                  </button>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  Nenhum encontro global está ativo no momento. Use o formulário abaixo para forçar o próximo encontro
-                  de todos os jogadores online.
-                </p>
-              )}
-            </div>
-
-            {/* Broadcast Form */}
+            {/* Create Mission Form */}
             <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                <Sparkles className="w-4 h-4 text-rose-400" />
-                <h4 className="font-bold text-sm text-white">Configurar Novo Encontro Global</h4>
+                <Compass className="w-4 h-4 text-emerald-400" />
+                <h4 className="font-bold text-sm text-white">Criar Nova Missão para a Comunidade</h4>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Espécie do Pokémon:</label>
-                  <select
-                    value={broadcastSpeciesId}
-                    onChange={(e) => setBroadcastSpeciesId(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
-                  >
-                    {pokemonKeys.map((id) => (
-                      <option key={id} value={id}>
-                        #{id} - {STARTERS_AND_POKEMON_DATABASE[id]?.displayName}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Título da Missão:</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Mestre das Batalhas"
+                    value={missionTitle}
+                    onChange={(e) => setMissionTitle(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Nível do Pokémon (1-100):</label>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Descrição do Desafio:</label>
                   <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={broadcastLevel}
-                    onChange={(e) =>
-                      setBroadcastLevel(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)))
-                    }
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500 font-mono"
+                    type="text"
+                    placeholder="Ex: Vença 5 batalhas contra Pokémon selvagens."
+                    value={missionDesc}
+                    onChange={(e) => setMissionDesc(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
                   />
                 </div>
-              </div>
 
-              <div className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-                <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={broadcastShiny}
-                    onChange={(e) => setBroadcastShiny(e.target.checked)}
-                    className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4"
-                  />
-                  <span>✨ Garantir Forma Shiny para Todos</span>
-                </label>
-                <span className="text-[11px] text-slate-400">
-                  {broadcastShiny ? 'Aparecerá com brilho e cores raras' : 'Aparência comum da espécie'}
-                </span>
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Tipo de Objetivo:</label>
+                    <select
+                      value={missionTargetType}
+                      onChange={(e) => setMissionTargetType(e.target.value as any)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                    >
+                      <option value="win_battles">Vencer Batalhas</option>
+                      <option value="catch_pokemon">Capturar Pokémon</option>
+                      <option value="super_effective">Ataques Super Efetivos</option>
+                    </select>
+                  </div>
 
-              <button
-                onClick={handleStartBroadcast}
-                className="w-full py-3 bg-gradient-to-r from-rose-600 via-pink-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-rose-950/50 transition-all active:scale-95 flex items-center justify-center gap-2"
-              >
-                <Radio className="w-4 h-4" />
-                <span>📡 Transmitir Encontro para Todos os Jogadores Online</span>
-              </button>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Meta Numérica:</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={missionTargetValue}
+                      onChange={(e) => setMissionTargetValue(Math.max(1, Number(e.target.value)))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Reward Configuration */}
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-3">
+                  <label className="block text-xs font-bold text-amber-400">
+                    🎁 Configuração da Recompensa:
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Tipo de Recompensa:</label>
+                      <select
+                        value={missionRewardType}
+                        onChange={(e) => setMissionRewardType(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                      >
+                        <option value="battle_pass_xp">⚡ XP do Passe de Batalha</option>
+                        <option value="ball">⚾ Pokébolas</option>
+                        <option value="money">💰 PokéDólares</option>
+                        <option value="pokemon_encounter">🐾 Encontro com Pokémon</option>
+                      </select>
+                    </div>
+
+                    {missionRewardType === 'battle_pass_xp' && (
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">Quantidade de XP:</label>
+                        <input
+                          type="number"
+                          value={missionRewardAmount}
+                          onChange={(e) => setMissionRewardAmount(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-yellow-400 font-bold"
+                        />
+                      </div>
+                    )}
+
+                    {missionRewardType === 'money' && (
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">Valor em $:</label>
+                        <input
+                          type="number"
+                          value={missionRewardAmount}
+                          onChange={(e) => setMissionRewardAmount(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-emerald-400 font-bold"
+                        />
+                      </div>
+                    )}
+
+                    {missionRewardType === 'ball' && (
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">Tipo de Pokébola:</label>
+                        <select
+                          value={missionRewardItemId}
+                          onChange={(e) => setMissionRewardItemId(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                        >
+                          <option value="poke_ball">Poké Bola</option>
+                          <option value="great_ball">Great Bola</option>
+                          <option value="ultra_ball">Ultra Bola</option>
+                          <option value="master_ball">Master Bola</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {missionRewardType === 'pokemon_encounter' && (
+                    <div className="space-y-2 pt-2 border-t border-slate-800">
+                      <PokemonSearchPicker
+                        selectedId={missionRewardPokemonId}
+                        onSelect={(id) => setMissionRewardPokemonId(id)}
+                        label="Pokémon da Recompensa (Pesquise qualquer espécie da Pokédex #1 a #1025):"
+                        allowBosses={true}
+                      />
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">Nível do Pokémon:</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={missionRewardPokemonLevel}
+                          onChange={(e) => setMissionRewardPokemonLevel(Number(e.target.value))}
+                          className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-purple-300 font-bold"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleCreateMission}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Publicar Missão para Todos os Jogadores
+                </button>
+              </div>
+            </div>
+
+            {/* Existing Missions List */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <Compass className="w-4 h-4 text-emerald-400" />
+                Missões Ativas no Banco ({missionsList.length})
+              </h4>
+
+              {missionsList.length === 0 ? (
+                <div className="p-6 text-center text-slate-500 text-xs bg-slate-950 rounded-2xl border border-slate-800">
+                  Nenhuma missão personalizada salva no Firestore. As missões padrão do sistema serão exibidas aos jogadores.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {missionsList.map((m) => (
+                    <div
+                      key={m.id}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
+                    >
+                      <div>
+                        <h5 className="font-bold text-sm text-white">{m.title}</h5>
+                        <p className="text-xs text-slate-400">{m.description}</p>
+                        <div className="text-[11px] text-emerald-400 font-semibold mt-1">
+                          Meta: {m.targetValue} ({m.targetType}) • Recompensa: {m.rewardType}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMission(m.id)}
+                        className="p-2 rounded-lg bg-red-950/40 text-red-400 hover:bg-red-900/60 transition-colors"
+                        title="Excluir Missão"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
