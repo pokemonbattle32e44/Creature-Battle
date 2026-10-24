@@ -17,6 +17,9 @@ export async function generateWildEncounter(
   let isLegendaryIncense = false;
   let typeFilter: string | null = null;
 
+  let isGhostIncense = false;
+  let isMissingNoIncense = false;
+
   if (activeIncenseId && ITEMS_DATABASE[activeIncenseId]) {
     const item = ITEMS_DATABASE[activeIncenseId];
     if (item.category === 'incense') {
@@ -24,8 +27,44 @@ export async function generateWildEncounter(
       if (item.incenseSpecial === 'shiny') isShinyIncense = true;
       if (item.incenseSpecial === 'pseudo') isPseudoIncense = true;
       if (item.incenseSpecial === 'legendary') isLegendaryIncense = true;
+      if (item.incenseSpecial === 'ghost_curse' || item.id === 'ghost_ticket' || item.id === 'incense_ghost') isGhostIncense = true;
+      if (item.incenseSpecial === 'missingno_glitch' || item.id === 'missingno_ticket' || item.id === 'incense_missingno') isMissingNoIncense = true;
       if (item.incenseType) typeFilter = item.incenseType;
     }
+  }
+
+  // 0. Special Incense Trigger: GHOST (Small / minimal chance, disguised as normal Pokémon with higher level)
+  // "Se o Ghost aparecer ele não aparece normalmente, ele vai aparecer como um pokémon disfarçado, ele terá um nível maior que o esperado"
+  if (isGhostIncense && Math.random() < 0.18) {
+    const ghostDisguisePool = [93, 94, 105, 356, 426, 609, 709, 302, 354]; // Haunter, Gengar, Marowak, Dusclops, Drifblim, Chandelure, Trevenant, Sableye, Banette
+    const chosenDisguiseId = ghostDisguisePool[Math.floor(Math.random() * ghostDisguisePool.length)];
+    const disguiseBase = (await fetchPokemonData(chosenDisguiseId)) || (await fetchPokemonData(94))!;
+    // Disguised level is substantially higher than expected (e.g. +14 to +20 levels above lead!)
+    const disguisedLevel = Math.min(95, Math.max(38, leadLevel + 14 + Math.floor(Math.random() * 6)));
+    const wildInstance = createPokemonInstance(disguiseBase, disguisedLevel, false);
+    wildInstance.isDisguisedGhost = true;
+    return { wildInstance, consumedIncense };
+  }
+
+  // 0. Special Incense Trigger: MissingNO. (Small / minimal chance, disguised as an unevolved Pokémon at an impossible level)
+  // "o missig.no quando aparecer vai ser disfarçado de certo pokémon em um certo nível que já era para ele ter evoluído"
+  if (isMissingNoIncense && Math.random() < 0.18) {
+    const glitchDisguiseSpecies = [
+      { id: 129, evoLevel: 20 }, // Magikarp (evolves at 20)
+      { id: 4, evoLevel: 16 },   // Charmander (evolves at 16)
+      { id: 7, evoLevel: 16 },   // Squirtle (evolves at 16)
+      { id: 1, evoLevel: 16 },   // Bulbasaur (evolves at 16)
+      { id: 16, evoLevel: 18 },  // Pidgey (evolves at 18)
+      { id: 10, evoLevel: 7 },   // Caterpie (evolves at 7)
+      { id: 19, evoLevel: 20 },  // Rattata (evolves at 20)
+    ];
+    const chosenGlitch = glitchDisguiseSpecies[Math.floor(Math.random() * glitchDisguiseSpecies.length)];
+    const glitchBase = (await fetchPokemonData(chosenGlitch.id)) || (await fetchPokemonData(129))!;
+    // Disguised as this pre-evolution, but at an impossible level far above its evolution point (e.g. Magikarp Lv 35, Caterpie Lv 26)
+    const glitchLevel = Math.max(chosenGlitch.evoLevel + 12, leadLevel + 8);
+    const wildInstance = createPokemonInstance(glitchBase, glitchLevel, false);
+    wildInstance.isDisguisedMissingNo = true;
+    return { wildInstance, consumedIncense };
   }
 
   // Active Events calculation
@@ -86,18 +125,18 @@ export async function generateWildEncounter(
 
   // If no special incense is active and tier is regular, check biome encounter table first (65% chance to encounter biome native)
   if (!isLegendaryIncense && !isPseudoIncense && !typeFilter && chosenTier === 'regular' && Math.random() < 0.65) {
-    const table = [...biomeConfig.encounterPool];
+    // Strictly filter out Ghost (666) and MissingNO (0) from natural biome encounter pool!
+    const table = biomeConfig.encounterPool.filter((e) => e.id !== 0 && e.id !== 666);
 
     // If an active event targets this biome with boosted species, inject it into the table so it can appear
     for (const [speciesKey, boostPct] of Object.entries(eventBoostedSpecies)) {
       const speciesIdNum = parseInt(speciesKey, 10);
-      if (speciesIdNum && !table.some((e) => e.id === speciesIdNum)) {
+      if (speciesIdNum && speciesIdNum !== 0 && speciesIdNum !== 666 && !table.some((e) => e.id === speciesIdNum)) {
         table.push({ id: speciesIdNum, name: `Event #${speciesIdNum}`, weight: Math.floor(20 * (1 + boostPct / 100)) });
       }
     }
 
     // Apply event spawn boosts to weights:
-    // e.g. +200% boost -> multiplier is 1 + 200/100 = 3.0x
     const weightedTable = table.map((entry) => {
       let weight = entry.weight;
       const boostPct = eventBoostedSpecies[String(entry.id)] || eventBoostedSpecies[entry.name.toLowerCase()];
@@ -121,7 +160,9 @@ export async function generateWildEncounter(
 
   // Fallback to National Pokedex filtering if not chosen via biome table
   if (!chosenSpeciesId) {
+    // STRICT RULE: GHOST (#666) and MissingNO (#0) CANNOT appear naturally in any tier!
     let candidatePool = NATIONAL_POKEDEX_INDEX.filter((entry) => {
+      if (entry.id === 0 || entry.id === 666 || entry.name === 'ghost' || entry.name === 'missingno') return false;
       if (chosenTier === 'legendary') return entry.isRestricted;
       if (chosenTier === 'pseudo') return entry.isPseudoLegendary;
       return !entry.isRestricted && !entry.isPseudoLegendary;
@@ -135,13 +176,12 @@ export async function generateWildEncounter(
       }
     }
 
-    // Apply Type Incense filter if active
     if (typeFilter) {
       const typeMatched = candidatePool.filter((e) => e.types.includes(typeFilter as any));
       if (typeMatched.length > 0) {
         candidatePool = typeMatched;
       } else {
-        candidatePool = NATIONAL_POKEDEX_INDEX.filter((e) => e.types.includes(typeFilter as any));
+        candidatePool = NATIONAL_POKEDEX_INDEX.filter((e) => e.id !== 0 && e.id !== 666 && e.types.includes(typeFilter as any));
       }
     }
 

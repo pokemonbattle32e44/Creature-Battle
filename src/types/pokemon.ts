@@ -249,6 +249,10 @@ export interface PokemonInstance {
   heldItem?: string;
   ability: string;
   disguiseBroken?: boolean;
+  isDisguisedGhost?: boolean;
+  isDisguisedMissingNo?: boolean;
+  isBossGhost?: boolean;
+  isBossMissingNo?: boolean;
   sprites: {
     front: string;
     back: string;
@@ -384,7 +388,7 @@ export interface Item {
   isRevive?: boolean;
   statBoost?: { stat: keyof StatStages; stages: number };
   incenseType?: PokemonType;
-  incenseSpecial?: 'shiny' | 'pseudo' | 'legendary';
+  incenseSpecial?: 'shiny' | 'pseudo' | 'legendary' | 'ghost_curse' | 'missingno_glitch';
   megaStoneForSpeciesId?: number;
   megaStoneFormId?: string;
 }

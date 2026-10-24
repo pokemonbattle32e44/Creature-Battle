@@ -124,4 +124,75 @@
   animation: ghostAura 2s ease-in-out infinite;
 }
 
+@keyframes faintDefeat {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  30% {
+    filter: brightness(1.8) contrast(150%);
+    transform: translateY(-8px) scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.85);
+    filter: brightness(0.2);
+  }
+}
+
+.animate-faint-defeat {
+  animation: faintDefeat 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+}
+
+@keyframes bossGhostReveal {
+  0% {
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  30% {
+    filter: invert(0.8) hue-rotate(270deg) drop-shadow(0 0 35px #a855f7) brightness(1.6);
+    transform: scale(1.15) translateY(-8px);
+  }
+  60% {
+    filter: invert(1) contrast(300%) drop-shadow(0 0 50px #581c87) brightness(0.6);
+    transform: scale(0.95) skew(12deg);
+  }
+  100% {
+    filter: drop-shadow(0 0 30px #7e22ce);
+    transform: scale(1);
+  }
+}
+
+.animate-ghost-reveal {
+  animation: bossGhostReveal 1.6s ease-in-out infinite;
+}
+
+@keyframes bossMissingNoReveal {
+  0% {
+    filter: contrast(100%);
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    filter: hue-rotate(180deg) invert(1) drop-shadow(8px 0 0 #06b6d4) drop-shadow(-8px 0 0 #ec4899);
+    transform: translate(-8px, 6px) skewX(20deg);
+  }
+  50% {
+    filter: hue-rotate(90deg) contrast(400%) drop-shadow(0 8px 0 #22c55e);
+    transform: translate(8px, -6px) scale(1.2);
+  }
+  75% {
+    filter: invert(0.8) drop-shadow(-8px -6px 0 #eab308);
+    transform: translate(-4px, 8px) skewY(-15deg);
+  }
+  100% {
+    filter: contrast(100%);
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+.animate-missingno-reveal {
+  animation: bossMissingNoReveal 0.2s steps(2) infinite;
+}
+
 

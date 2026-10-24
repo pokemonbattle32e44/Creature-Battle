@@ -50,34 +50,6 @@ export const ShopView: React.FC<ShopViewProps> = ({
       return;
     }
 
-    if (item.id === 'missingno_ticket') {
-      if (!isAdmin) {
-        soundEngine.playHit('notVery');
-        showToast('🔒 Apenas administradores podem invocar o MissingNO. diretamente!');
-        return;
-      }
-      soundEngine.playCatchSuccess();
-      onBuyItem(item.id, 1, item.price);
-      if (onChallengeMissingNo) {
-        onChallengeMissingNo();
-      }
-      return;
-    }
-
-    if (item.id === 'ghost_ticket') {
-      if (!isAdmin) {
-        soundEngine.playHit('notVery');
-        showToast('🔒 Apenas administradores podem invocar o GHOST diretamente!');
-        return;
-      }
-      soundEngine.playCatchSuccess();
-      onBuyItem(item.id, 1, item.price);
-      if (onChallengeGhost) {
-        onChallengeGhost();
-      }
-      return;
-    }
-
     soundEngine.playCatchSuccess();
     onBuyItem(item.id, qty, totalCost);
     showToast(`Comprado com sucesso: ${qty}x ${item.name}!`);

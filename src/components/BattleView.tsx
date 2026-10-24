@@ -27,6 +27,7 @@ import {
   revertMegaEvolution,
   applyTerastallization,
   revertTerastallization,
+  createPokemonInstance,
 } from '../utils/pokemonCalc';
 import { getAvailableMegaEvolution } from '../data/megaEvolutions';
 import { getBiomeConfig } from '../data/environments';
@@ -100,6 +101,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
   // Move learning modal state
   const [pendingMove, setPendingMove] = useState<{ pokemonIndex: number; newMoveId: string } | null>(null);
 
+  // Defeat animation & Boss reveal states
+  const [faintingTarget, setFaintingTarget] = useState<'player' | 'enemy' | null>(null);
+  const [isRevealingBoss, setIsRevealingBoss] = useState<'ghost' | 'missingno' | null>(null);
+
   const activePlayer = team[activePlayerIndex];
 
   useEffect(() => {
@@ -107,14 +112,20 @@ export const BattleView: React.FC<BattleViewProps> = ({
     setIsIntroAnimating(true);
 
     // Initial battle intro log & cries
-    if (enemy.isShiny) {
+    if (enemy.isDisguisedGhost) {
+      soundEngine.playCry(enemy.pokedexId);
+      addLog(`⚠️ Um ${enemy.displayName} selvagem Nível ${enemy.level} apareceu! Uma névoa obscura o envolve e seu nível é anormalmente alto...`);
+    } else if (enemy.isDisguisedMissingNo) {
+      soundEngine.playGlitchSound();
+      addLog(`👾 Um ${enemy.displayName} selvagem Nível ${enemy.level} apareceu! Algo está errado no sistema... ele já deveria ter evoluído!`);
+    } else if (enemy.isShiny) {
       soundEngine.playLevelUp();
       addLog(`✨ ¡RARO! Um ${enemy.displayName} SHINY de Nível ${enemy.level} apareceu! ✨`);
     } else {
       addLog(`Um ${enemy.displayName} selvagem de Nível ${enemy.level} apareceu!`);
     }
 
-    if (enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost') {
+    if (enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost) {
       soundEngine.playGlitchSound();
       addLog(`👻 O terrível GHOST manifestou-se! Ele roubou 2 ataques de ${activePlayer.displayName}!`);
       if (activePlayer.moves.length > 0) {
@@ -327,6 +338,54 @@ export const BattleView: React.FC<BattleViewProps> = ({
     setIsAnimating(false);
   };
 
+  const triggerGhostReveal = async () => {
+    setIsAnimating(true);
+    setIsRevealingBoss('ghost');
+    soundEngine.playGlitchSound();
+    addLog(`💥 O ${enemy.displayName} caiu em batalha!`);
+    await delay(900);
+    soundEngine.playHit('super');
+    addLog(`⚠️ ESPERE! Uma névoa espectral negra e densa começa a se desprender do Pokémon!`);
+    await delay(1200);
+    soundEngine.playGlitchSound();
+    addLog(`👻 A ILUSÃO FOI DESTRUÍDA! O VERDADEIRO GHOST DAS LENDAS SE REVELOU!`);
+    await delay(1500);
+
+    const ghostBase = STARTERS_AND_POKEMON_DATABASE[666];
+    const trueGhost = createPokemonInstance(ghostBase, 100);
+    trueGhost.isBossGhost = true;
+    trueGhost.displayName = 'GHOST (Lenda Sombria)';
+    setEnemy(trueGhost);
+    setIsRevealingBoss(null);
+    soundEngine.playCry(666);
+    addLog(`👁️ PREPARE-SE! O GHOST não pode ser derrotado normalmente e só pode ser capturado com a MASTER BOLA!`);
+    setIsAnimating(false);
+  };
+
+  const triggerMissingNoReveal = async () => {
+    setIsAnimating(true);
+    setIsRevealingBoss('missingno');
+    soundEngine.playGlitchSound();
+    addLog(`💥 O ${enemy.displayName} colapsou em combate!`);
+    await delay(900);
+    soundEngine.playHit('critical');
+    addLog(`👾 ERRO CRÍTICO NA REALIDADE: 0x000000FF CORRUPTED MEMORY STREAM...`);
+    await delay(1200);
+    soundEngine.playGlitchSound();
+    addLog(`💾 A MATRIX DO JOGO SE ROMPEU! O CÓDIGO FONTE REVELOU O MISSINGNO.!`);
+    await delay(1500);
+
+    const missingNoBase = STARTERS_AND_POKEMON_DATABASE[0];
+    const trueMissingNo = createPokemonInstance(missingNoBase, 100);
+    trueMissingNo.isBossMissingNo = true;
+    trueMissingNo.displayName = 'MissingNO. (Glitch Dimensional)';
+    setEnemy(trueMissingNo);
+    setIsRevealingBoss(null);
+    soundEngine.playCry(0);
+    addLog(`👾 MISSINGNO. SE MATERIALIZOU! ELE É INVENCÍVEL E SÓ PODE SER CAPTURADO COM A MASTER BOLA!`);
+    setIsAnimating(false);
+  };
+
   const executeAttack = async (
     pIndex: number,
     attackerType: 'player' | 'enemy',
@@ -410,7 +469,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
     soundEngine.playHit(move.category === 'special' ? 'super' : 'physical');
 
     // MissingNO attack glitches defender sprite
-    if (attacker.pokedexId === 0 || attacker.name.toLowerCase() === 'missingno') {
+    if (attacker.pokedexId === 0 || attacker.name.toLowerCase() === 'missingno' || attacker.isBossMissingNo) {
       soundEngine.playGlitchSound();
       if (isPlayerAttacker) {
         setIsEnemyGlitched(true);
@@ -493,17 +552,50 @@ export const BattleView: React.FC<BattleViewProps> = ({
     else if (result.typeEffectiveness > 1) soundEngine.playHit('super');
     else if (result.typeEffectiveness > 0 && result.typeEffectiveness < 1) soundEngine.playHit('notVery');
 
-    // Mimikyu Disguise ability block (Absorbs damage ONCE per battle!)
-    if (defender.ability === 'Disguise' && !defender.disguiseBroken && result.damage > 0) {
+    // Mimikyu Disguise ability block (Absorbs damage ONCE per battle and changes to Busted form!)
+    const isMimikyu = defender.pokedexId === 778 || defender.ability === 'Disguise' || defender.name.toLowerCase().includes('mimikyu');
+    if (isMimikyu && !defender.disguiseBroken && result.damage > 0) {
       result.damage = 0;
       defender.disguiseBroken = true;
-      addLog(`O Disfarce de ${defender.displayName} se quebrou ao absorver o impacto do golpe!`);
+      soundEngine.playHit('super');
+      const disguiseBreakDmg = Math.max(1, Math.floor(defender.maxHp / 8));
+      const postDisguiseHp = Math.max(1, defender.currentHp - disguiseBreakDmg);
+      
+      const bustedSprites = {
+        front: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/10143.png',
+        animatedFront: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/10143.gif',
+        back: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/10143.png',
+        artwork: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/10143.png',
+      };
+
+      if (isPlayerAttacker) {
+        setEnemy((prev) => ({
+          ...prev,
+          disguiseBroken: true,
+          currentHp: postDisguiseHp,
+          displayName: 'Mimikyu (Forma Desmascarada)',
+          sprites: { ...prev.sprites, ...bustedSprites },
+        }));
+      } else {
+        const updatedTeam = [...team];
+        updatedTeam[pIndex] = {
+          ...updatedTeam[pIndex],
+          disguiseBroken: true,
+          currentHp: postDisguiseHp,
+          displayName: 'Mimikyu (Forma Desmascarada)',
+          sprites: { ...updatedTeam[pIndex].sprites, ...bustedSprites },
+        };
+        setTeam(updatedTeam);
+      }
+      triggerFloatingText(isPlayerAttacker ? 'enemy' : 'player', `Disfarce Rompido! (-${disguiseBreakDmg} HP)`, 'text-purple-400 font-extrabold');
+      addLog(`🛡️ O Disfarce de ${defender.displayName} se rompeu ao absorver o impacto! Mimikyu sofreu ${disguiseBreakDmg} HP e revelou sua Forma Desmascarada (Busted)! A partir de agora ele receberá dano normalmente.`);
     }
 
     // MissingNO Invincibility block
-    if (defender.pokedexId === 0 || defender.name.toLowerCase() === 'missingno' || defender.ability === 'Invincible') {
+    if (defender.pokedexId === 0 || defender.name.toLowerCase() === 'missingno' || defender.ability === 'Invincible' || defender.isBossMissingNo) {
       result.damage = 0;
-      addLog(`MissingNO. é invencível! O ataque se desfez no erro de código do Glitch!`);
+      soundEngine.playGlitchSound();
+      addLog(`👾 MissingNO. é invencível! O ataque se desfez no erro de código da matrix!`);
     }
 
     // Focus Sash / Sturdy survival
@@ -564,7 +656,24 @@ export const BattleView: React.FC<BattleViewProps> = ({
       if (isPlayerAttacker) {
         setEnemy((prev) => ({ ...prev, currentHp: newDefenderHp }));
         if (newDefenderHp <= 0) {
-          await delay(800);
+          // Check for Epic Disguised Boss Reveals!
+          if (enemy.isDisguisedGhost) {
+            await delay(400);
+            await triggerGhostReveal();
+            return false;
+          }
+          if (enemy.isDisguisedMissingNo) {
+            await delay(400);
+            await triggerMissingNoReveal();
+            return false;
+          }
+
+          // Trigger smooth defeat animation
+          setFaintingTarget('enemy');
+          soundEngine.playFaint();
+          addLog(`${enemy.displayName} desmaiou!`);
+          await delay(900);
+          setFaintingTarget(null);
           await handleVictory();
           return true;
         }
@@ -574,8 +683,12 @@ export const BattleView: React.FC<BattleViewProps> = ({
         setTeam(updatedTeam);
 
         if (newDefenderHp <= 0) {
+          // Trigger smooth player defeat animation
+          setFaintingTarget('player');
+          soundEngine.playFaint();
           addLog(`${activePlayer.displayName} desmaiou!`);
-          await delay(800);
+          await delay(900);
+          setFaintingTarget(null);
           checkPlayerFainted();
           return true;
         }
@@ -935,14 +1048,12 @@ export const BattleView: React.FC<BattleViewProps> = ({
     const newInv = { ...userInventory, [ballItemId]: userInventory[ballItemId] - 1 };
     onUpdateInventory(newInv);
 
-    const isMissingNo = enemy.pokedexId === 0 || enemy.name.toLowerCase() === 'missingno';
-    const isGhostBoss = enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost';
-
-    if (isMissingNo && ballItemId !== 'master_ball') {
+    // Disguised Boss block: must be defeated to reveal true form before capture
+    if (enemy.isDisguisedGhost || enemy.isDisguisedMissingNo) {
       addLog(`Você arremessou a Pokébola...`);
       soundEngine.playBallThrow();
       await delay(800);
-      addLog(`⚡ O MissingNO. corrompeu a Pokébola! Apenas a MASTER BOLA pode capturar o erro do sistema!`);
+      addLog(`⚡ O Pokémon disfarçado se desvencilhou da Pokébola com uma energia anormal! Você deve derrotá-lo em combate primeiro para revelar sua verdadeira identidade!`);
       soundEngine.playHit('notVery');
       setBallThrowing(false);
       setShakesCount(0);
@@ -953,17 +1064,37 @@ export const BattleView: React.FC<BattleViewProps> = ({
       return;
     }
 
-    if (isGhostBoss && ballItemId !== 'master_ball' && ballItemId !== 'ultra_ball') {
+    const isMissingNo = enemy.pokedexId === 0 || enemy.name.toLowerCase() === 'missingno' || enemy.isBossMissingNo;
+    const isGhostBoss = enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost;
+
+    if (isMissingNo && ballItemId !== 'master_ball') {
       addLog(`Você arremessou a Pokébola...`);
       soundEngine.playBallThrow();
       await delay(800);
-      addLog(`👻 O GHOST repeliu a Pokébola com sua aura mortal! Apenas ULTRA BOLA ou MASTER BOLA podem capturá-lo!`);
+      addLog(`👾 O MissingNO. corrompeu os bytes da Pokébola! Apenas a MASTER BOLA pode aprisionar o erro dimensional!`);
+      soundEngine.playGlitchSound();
       soundEngine.playHit('notVery');
       setBallThrowing(false);
       setShakesCount(0);
       await delay(1200);
       const enemyMove = enemy.moves[0];
-      await executeAttack(activePlayerIndex, 'enemy', enemyMove ? enemyMove.moveId : 'steal_curse', false);
+      await executeAttack(activePlayerIndex, 'enemy', enemyMove ? enemyMove.moveId : 'tackle', false);
+      setIsAnimating(false);
+      return;
+    }
+
+    if (isGhostBoss && ballItemId !== 'master_ball') {
+      addLog(`Você arremessou a Pokébola...`);
+      soundEngine.playBallThrow();
+      await delay(800);
+      addLog(`👻 A aura mortal do GHOST estilhaçou a Pokébola! Apenas a MASTER BOLA possui o poder arcano para aprisioná-lo!`);
+      soundEngine.playGlitchSound();
+      soundEngine.playHit('notVery');
+      setBallThrowing(false);
+      setShakesCount(0);
+      await delay(1200);
+      const enemyMove = enemy.moves[0];
+      await executeAttack(activePlayerIndex, 'enemy', enemyMove ? enemyMove.moveId : 'tackle', false);
       setIsAnimating(false);
       return;
     }
@@ -1166,14 +1297,45 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 ballThrowing ? 'scale-0 transition-all duration-700' : ''
               } ${isIntroAnimating ? 'animate-intro-enemy' : ''} ${
                 attackerLunge === 'enemy' ? 'animate-lunge-enemy' : ''
-              } ${isEnemyGlitched ? 'missingno-glitch-victim' : ''} ${
-                enemy.pokedexId === 0 || enemy.name.toLowerCase() === 'missingno' ? 'missingno-pixel-glitch' : ''
+              } ${faintingTarget === 'enemy' ? 'animate-faint-defeat' : ''} ${
+                isRevealingBoss === 'ghost' ? 'animate-ghost-reveal' : ''
+              } ${isRevealingBoss === 'missingno' ? 'animate-missingno-reveal' : ''} ${
+                isEnemyGlitched ? 'missingno-glitch-victim' : ''
               } ${
-                enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
+                enemy.pokedexId === 0 || enemy.name.toLowerCase() === 'missingno' || enemy.isBossMissingNo ? 'missingno-pixel-glitch' : ''
+              } ${
+                enemy.pokedexId === 666 || enemy.name.toLowerCase() === 'ghost' || enemy.isBossGhost ? 'ghost-aura' : ''
               } ${enemy.isTerastallized ? 'drop-shadow-[0_0_15px_rgba(56,189,248,0.7)]' : ''}`}
             />
           </div>
         </div>
+
+        {/* Epic Boss Transformation Atmosphere Overlay */}
+        {isRevealingBoss && (
+          <div className="absolute inset-0 z-30 pointer-events-none flex flex-col items-center justify-center backdrop-blur-sm transition-all duration-500 animate-pulse">
+            {isRevealingBoss === 'ghost' ? (
+              <div className="text-center p-6 bg-purple-950/80 border-2 border-purple-500 rounded-3xl shadow-2xl shadow-purple-950">
+                <span className="text-3xl sm:text-4xl animate-bounce block mb-2">👻</span>
+                <h3 className="text-lg sm:text-2xl font-black text-purple-200 uppercase tracking-widest animate-pulse">
+                  ILUSÃO QUEBRADA!
+                </h3>
+                <p className="text-xs sm:text-sm text-purple-300 font-mono mt-1">
+                  O VERDADEIRO GHOST EMERGIU DAS TREVAS!
+                </p>
+              </div>
+            ) : (
+              <div className="text-center p-6 bg-slate-950/90 border-2 border-cyan-400 rounded-3xl shadow-2xl shadow-cyan-950">
+                <span className="text-3xl sm:text-4xl animate-bounce block mb-2">👾</span>
+                <h3 className="text-lg sm:text-2xl font-black text-cyan-300 uppercase tracking-widest font-mono">
+                  FATAL SYSTEM GLITCH: 0x00
+                </h3>
+                <p className="text-xs sm:text-sm text-pink-400 font-mono mt-1">
+                  MISSINGNO. INVADIU A REALIDADE!
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 2. PLAYER POKEMON SECTION (BOTTOM LEFT) */}
         <div className="flex justify-between items-end gap-4 mt-4">
@@ -1205,8 +1367,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
               className={`w-32 h-32 sm:w-40 sm:h-40 object-contain relative z-10 scale-110 transition-all duration-300 ${
                 isIntroAnimating ? 'animate-intro-player' : ''
               } ${attackerLunge === 'player' ? 'animate-lunge-player' : ''} ${
-                isPlayerGlitched ? 'missingno-glitch-victim' : ''
-              } ${
+                faintingTarget === 'player' ? 'animate-faint-defeat' : ''
+              } ${isPlayerGlitched ? 'missingno-glitch-victim' : ''} ${
                 activePlayer.pokedexId === 0 || activePlayer.name.toLowerCase() === 'missingno' ? 'missingno-pixel-glitch' : ''
               } ${
                 activePlayer.pokedexId === 666 || activePlayer.name.toLowerCase() === 'ghost' ? 'ghost-aura' : ''
